@@ -1,0 +1,17 @@
+{
+  "name": "rte-industrial-visit",
+  "version": "1.0.0",
+  "description": "RTE Society's Rural Engineering College Hulkoti - 3 Days Industrial Visit Website",
+  "scripts": {
+    "dev": "npx serve .",
+    "build": "echo 'Static site - no build needed'"
+  },
+  "keywords": [
+    "industrial-visit",
+    "college",
+    "trip"
+  ],
+  "author": "",
+  "license": "MIT"
+}
+
