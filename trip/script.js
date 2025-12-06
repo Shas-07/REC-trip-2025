@@ -6,17 +6,28 @@ const modalOverlay = document.querySelector('.modal-overlay');
 
 // Open modal with place content
 function openModal(placeId) {
-    // Get content from hidden content storage
-    const contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
+    // First try to get content from hidden content storage
+    let contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
+    let content = null;
+    
     if (contentData) {
-        const content = contentData.querySelector('.place-card-content');
-        if (content) {
-            modalBody.innerHTML = content.innerHTML;
-            modal.classList.add('active');
-            document.body.style.overflow = 'hidden';
-            // Scroll to top of modal
-            modalBody.scrollTop = 0;
+        content = contentData.querySelector('.place-card-content');
+    }
+    
+    // If not found in hidden section, try to get from visible place-card
+    if (!content) {
+        const placeCard = document.querySelector(`.place-card[data-place="${placeId}"]`);
+        if (placeCard) {
+            content = placeCard.querySelector('.place-card-content');
         }
+    }
+    
+    if (content) {
+        modalBody.innerHTML = content.innerHTML;
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        // Scroll to top of modal
+        modalBody.scrollTop = 0;
     }
 }
 
