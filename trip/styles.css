@@ -90,19 +90,42 @@ body {
     align-items: center;
 }
 
+.hero-title-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 30px;
+}
+
 .hero-title {
     font-size: clamp(2rem, 5vw, 4rem);
     font-weight: 700;
-    margin-bottom: 20px;
+    margin: 0;
     letter-spacing: -0.02em;
     color: var(--text-primary);
+    text-align: center;
 }
 
-.hero-subtitle {
-    font-size: clamp(1.2rem, 2.5vw, 2rem);
-    font-weight: 400;
+.hero-department {
+    font-size: clamp(1rem, 1.8vw, 1.5rem);
+    font-weight: 500;
     color: var(--text-secondary);
-    margin-bottom: 10px;
+    margin: 0;
+    text-align: center;
+    opacity: 0.9;
+}
+
+.hero-subtitle-large {
+    font-size: clamp(2.5rem, 6vw, 5rem);
+    font-weight: 800;
+    color: var(--accent-primary);
+    margin-bottom: 20px;
+    text-align: center;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-shadow: 0 0 30px rgba(255, 107, 53, 0.3);
+    line-height: 1.1;
 }
 
 .hero-date {
