@@ -109,11 +109,33 @@ body {
 
 .hero-department {
     font-size: clamp(1rem, 1.8vw, 1.5rem);
-    font-weight: 500;
-    color: var(--text-secondary);
+    font-weight: 600;
+    color: #ff6b35;
     margin: 0;
     text-align: center;
-    opacity: 0.9;
+    text-shadow: 0 0 15px rgba(255, 107, 53, 0.4);
+    letter-spacing: 0.02em;
+}
+
+.hero-department-aiml {
+    font-size: clamp(1rem, 1.8vw, 1.5rem);
+    font-weight: 600;
+    color: #ff6b35;
+    margin: 10px 0 0 0;
+    text-align: center;
+    text-shadow: 0 0 15px rgba(255, 107, 53, 0.4);
+    letter-spacing: 0.02em;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.9;
+        transform: scale(1.02);
+    }
 }
 
 .hero-subtitle-large {
@@ -169,20 +191,20 @@ body {
     z-index: 1000;
     font-size: 0.65rem;
     font-family: 'Inter', sans-serif;
-    color: rgba(255, 255, 255, 0.6);
+    color: #ffffff;
     line-height: 1.6;
     text-align: left;
 }
 
 .faculty-corner a {
-    color: rgba(255, 255, 255, 0.6);
+    color: #ffffff;
     text-decoration: none;
     transition: color 0.2s ease;
     display: inline-block;
 }
 
 .faculty-corner a:hover {
-    color: rgba(255, 255, 255, 0.9);
+    color: rgba(255, 255, 255, 0.8);
 }
 
 .scroll-indicator {
@@ -1066,6 +1088,93 @@ body {
     margin-top: 15px;
 }
 
+/* Read Aloud and Translate Controls */
+.blog-controls {
+    position: absolute;
+    top: 20px;
+    right: 60px;
+    z-index: 1003;
+    display: flex;
+    gap: 10px;
+    flex-direction: column;
+}
+
+.read-aloud-btn, .translate-btn {
+    padding: 12px 20px;
+    background: rgba(74, 144, 226, 0.95);
+    backdrop-filter: blur(10px);
+    border: 2px solid var(--accent-secondary);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 20px rgba(74, 144, 226, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.read-aloud-btn:hover, .translate-btn:hover {
+    background: var(--accent-secondary);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 25px rgba(74, 144, 226, 0.6);
+}
+
+.read-aloud-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    box-shadow: 0 4px 20px rgba(255, 107, 53, 0.4);
+}
+
+.translate-dropdown {
+    position: absolute;
+    top: 60px;
+    right: 0;
+    background: var(--dark-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 0;
+    min-width: 150px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    display: none;
+}
+
+.translate-dropdown.show {
+    display: block;
+}
+
+.translate-option {
+    padding: 12px 20px;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.translate-option:hover {
+    background: var(--dark-hover);
+}
+
+.translate-option.active {
+    background: var(--dark-surface);
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+
+.translate-option::before {
+    content: '✓';
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.translate-option.active::before {
+    opacity: 1;
+}
+
 /* Footer */
 .footer {
     background: var(--dark-surface);
@@ -1141,15 +1250,106 @@ body {
         font-size: 0.85rem;
     }
 
+    .blog-controls {
+        top: 80px;
+        right: 15px;
+        gap: 8px;
+    }
+
     .faculty-corner {
         top: 15px;
         left: 15px;
         font-size: 0.6rem;
     }
 
+    .hero-department {
+        font-size: clamp(0.95rem, 1.6vw, 1.3rem);
+    }
+
+    .hero-department-aiml {
+        font-size: clamp(0.95rem, 1.6vw, 1.3rem);
+        margin: 8px 0 0 0;
+    }
+
+    .read-aloud-btn, .translate-btn {
+        padding: 10px 16px;
+        font-size: 0.85rem;
+    }
+
+    .translate-dropdown {
+        top: 50px;
+        right: 10px;
+        min-width: 120px;
+    }
+
+    .faculty-corner {
+        max-width: 150px;
+    }
+
+    .blog-controls {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .read-aloud-btn span:last-child,
+    .translate-btn span:last-child {
+        display: none;
+    }
+
+    .read-aloud-btn, .translate-btn {
+        min-width: 100px;
+        justify-content: center;
+    }
+
+    .modal-content-dark {
+        margin: 10px;
+    }
+
+    .blog-content {
+        font-size: 1rem;
+    }
+
+    .blog-content h3 {
+        font-size: 1.5rem;
+    }
 
     .popup-content {
         padding: 30px 20px;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: 1.5rem;
+    }
+
+    .hero-department {
+        font-size: clamp(0.85rem, 1.4vw, 1.1rem);
+    }
+
+    .hero-department-aiml {
+        font-size: clamp(0.85rem, 1.4vw, 1.1rem);
+    }
+
+    .faculty-corner {
+        font-size: 0.55rem;
+        max-width: 130px;
+    }
+
+    .timetable-btn-top {
+        padding: 10px 16px;
+        font-size: 0.8rem;
+    }
+
+    .blog-controls {
+        top: 70px;
+        right: 10px;
+    }
+
+    .read-aloud-btn, .translate-btn {
+        padding: 8px 12px;
+        font-size: 0.75rem;
+        min-width: 80px;
     }
 }
 
