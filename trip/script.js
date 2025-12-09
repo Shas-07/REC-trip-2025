@@ -40,11 +40,28 @@ function openModal(placeId) {
         stopReadAloud();
         
         // Initialize features when modal opens - ensure content is loaded
-        // For mobile: initialize immediately, no delays
-        // Content should already be loaded since we just set modalBody.innerHTML
-        initReadAloud();
-        initTranslate();
-        updateTranslateUI();
+        // CRITICAL: Use requestAnimationFrame to ensure DOM is fully updated
+        // This is especially important for content loaded from hidden divs (like Kaynes)
+        requestAnimationFrame(() => {
+            console.log('🔄 Initializing features for place:', placeId);
+            console.log('Modal body exists:', !!modalBody);
+            console.log('Modal body has content:', modalBody ? (modalBody.innerHTML.length > 0) : false);
+            const btn = document.getElementById('readAloudBtn');
+            console.log('Read Aloud button exists before init:', !!btn);
+            if (btn) {
+                console.log('Button parent:', btn.parentElement ? btn.parentElement.tagName : 'none');
+            }
+            initReadAloud();
+            initTranslate();
+            updateTranslateUI();
+            
+            // Verify button after init
+            const btnAfter = document.getElementById('readAloudBtn');
+            console.log('Read Aloud button exists after init:', !!btnAfter);
+            if (btnAfter) {
+                console.log('Button has event listeners attached');
+            }
+        });
     }
 }
 
@@ -282,11 +299,23 @@ let isReading = false;
 let touchStarted = false; // Track touch events for mobile
 
 function initReadAloud() {
+    console.log('🔄 Initializing Read Aloud...');
     const readAloudBtn = document.getElementById('readAloudBtn');
     if (!readAloudBtn) {
-        console.warn('Read Aloud button not found');
-        return;
+        console.error('❌ Read Aloud button not found!');
+        console.log('Searching for button in document...');
+        // Try alternative methods to find button
+        const altBtn = document.querySelector('.read-aloud-btn');
+        if (altBtn) {
+            console.log('Found button via class selector');
+            altBtn.id = 'readAloudBtn';
+        } else {
+            console.error('Button not found by ID or class');
+            return;
+        }
     }
+    
+    console.log('✓ Button found:', readAloudBtn.id, readAloudBtn.className);
     
     // Check if browser supports speech synthesis
     if (!('speechSynthesis' in window)) {
@@ -298,12 +327,20 @@ function initReadAloud() {
     // Initialize speech synthesis
     if (!speechSynthesis) {
         speechSynthesis = window.speechSynthesis;
+        console.log('✓ Speech synthesis initialized');
     }
     
     // Remove existing event listeners by cloning (prevents duplicate handlers)
     const newBtn = readAloudBtn.cloneNode(true);
     newBtn.id = 'readAloudBtn';
-    readAloudBtn.parentNode.replaceChild(newBtn, readAloudBtn);
+    const parent = readAloudBtn.parentNode;
+    if (parent) {
+        parent.replaceChild(newBtn, readAloudBtn);
+        console.log('✓ Button cloned and replaced');
+    } else {
+        console.error('❌ Could not replace button - parent not found');
+        return;
+    }
     
     // CRITICAL: Attach handlers directly - no delays, no async
     // This ensures the user gesture chain is maintained
@@ -313,6 +350,7 @@ function initReadAloud() {
     
     // Touch start handler
     newBtn.addEventListener('touchstart', function(e) {
+        console.log('👆 Touch start detected');
         isTouchEvent = true;
         touchStarted = true;
     }, { passive: true, once: false });
@@ -320,17 +358,20 @@ function initReadAloud() {
     // Touch end handler - PRIMARY for mobile
     // CRITICAL: Must call speak() directly from this handler for mobile browsers
     newBtn.addEventListener('touchend', function(e) {
+        console.log('👆 Touch end detected', { isTouchEvent, touchStarted });
         if (isTouchEvent || touchStarted) {
             e.preventDefault();
             e.stopPropagation();
             isTouchEvent = false;
             
+            console.log('📱 Calling handleReadAloudClick from touchend...');
             // CRITICAL FOR MOBILE: Call the handler IMMEDIATELY and SYNCHRONOUSLY
             // Do not wrap in any async operations - this breaks the gesture chain
             try {
                 handleReadAloudClick(e);
             } catch (err) {
-                console.error('Error in touchend handler:', err);
+                console.error('❌ Error in touchend handler:', err);
+                resetButtonState();
             }
             
             // Reset touch flag after a delay (doesn't affect gesture chain)
@@ -342,17 +383,22 @@ function initReadAloud() {
     
     // Click handler - for desktop and fallback
     newBtn.addEventListener('click', function(e) {
+        console.log('🖱️ Click detected', { touchStarted, isTouchEvent });
         // Skip if this was a touch event (already handled to prevent double-firing)
         if (!touchStarted && !isTouchEvent) {
+            console.log('📱 Calling handleReadAloudClick from click...');
             try {
                 handleReadAloudClick(e);
             } catch (err) {
-                console.error('Error in click handler:', err);
+                console.error('❌ Error in click handler:', err);
+                resetButtonState();
             }
+        } else {
+            console.log('⏭️ Skipping click handler (touch event detected)');
         }
     }, { once: false });
     
-    console.log('Read Aloud button initialized successfully');
+    console.log('✅ Read Aloud button initialized successfully');
 }
 
 // Separate handler function that does the actual work
