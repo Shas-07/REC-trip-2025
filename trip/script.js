@@ -60,12 +60,16 @@ function openModal(placeId) {
     
     // Initialize features after DOM update
     // Use requestAnimationFrame for better DOM readiness, especially for mobile
+    // For Kaynes specifically, wait a bit longer to ensure content is fully loaded
+    const isKaynes = normalizedPlaceId === 'kaynes' || placeId.toLowerCase() === 'kaynes';
+    const delay = isKaynes ? 200 : 150;
+    
     requestAnimationFrame(() => {
         setTimeout(() => {
             initReadAloud();
             initTranslate();
             updateTranslateUI();
-        }, 150); // Increased timeout for better reliability on mobile
+        }, delay);
     });
 }
 
@@ -367,31 +371,49 @@ function initReadAloud() {
         }
         
         // Find blog content - try multiple selectors for all places
-        // Check in order: direct .blog-content, nested .blog-content, then .blog-section
+        // Special handling for Kaynes - be extra thorough
         let blogContent = null;
         
+        if (!modalBody) {
+            resetButtonState();
+            return;
+        }
+        
         // Try direct .blog-content first (most common)
-        blogContent = modalBody?.querySelector('.blog-content');
+        blogContent = modalBody.querySelector('.blog-content');
         
         // If not found, try nested .blog-content within .blog-section
         if (!blogContent) {
-            blogContent = modalBody?.querySelector('.blog-section .blog-content');
+            blogContent = modalBody.querySelector('.blog-section .blog-content');
         }
         
         // If still not found, use the entire .blog-section
         if (!blogContent) {
-            blogContent = modalBody?.querySelector('.blog-section');
+            blogContent = modalBody.querySelector('.blog-section');
         }
         
         // Last resort: look for any content in .place-card-content
-        if (!blogContent && modalBody) {
+        if (!blogContent) {
             const placeContent = modalBody.querySelector('.place-card-content');
             if (placeContent) {
+                // Try multiple strategies
                 blogContent = placeContent.querySelector('.blog-content') ||
                              placeContent.querySelector('.blog-section .blog-content') ||
-                             placeContent.querySelector('.blog-section') ||
-                             placeContent;
+                             placeContent.querySelector('.blog-section');
+                
+                // If still nothing, use the entire place-card-content but exclude non-blog sections
+                if (!blogContent) {
+                    const tempDiv = placeContent.cloneNode(true);
+                    // Remove non-blog sections
+                    tempDiv.querySelectorAll('.location-section, .photo-gallery-section, .highlights, button, .read-aloud-btn, .translate-btn').forEach(el => el.remove());
+                    blogContent = tempDiv;
+                }
             }
+        }
+        
+        // Final fallback: if nothing found, try to find any element with blog-related classes
+        if (!blogContent) {
+            blogContent = modalBody.querySelector('[class*="blog"]');
         }
         
         if (!blogContent) {
