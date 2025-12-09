@@ -60,51 +60,18 @@ function openModal(placeId) {
         console.log('📦 Modal body HTML length:', modalBody.innerHTML.length);
         console.log('🔍 Modal active class:', modal.classList.contains('active'));
         
-        // CRITICAL: Initialize button handlers - try immediate first, then RAF as fallback
-        // For Kaynes specifically, we'll do both immediate and delayed
-        
-        if (placeId === 'kaynes') {
-            console.log('🔴 KAYNES SPECIAL: Double initialization');
-            // Immediate attempt
+        // Initialize features after modal is shown
+        requestAnimationFrame(() => {
             initReadAloud();
             initTranslate();
             updateTranslateUI();
-        }
-        
-        // Use requestAnimationFrame for all places (ensures DOM is painted)
-        requestAnimationFrame(() => {
-            try {
-                initReadAloud();
-                initTranslate();
-                updateTranslateUI();
-                
-                // Verify immediately after RAF
-                const btn = document.getElementById('readAloudBtn');
-                if (btn) {
-                    console.log('✅ Read Aloud button found and initialized for:', placeId);
-                    console.log('🔍 Button position:', btn.getBoundingClientRect());
-                    console.log('🔍 Button z-index:', window.getComputedStyle(btn).zIndex);
-                    
-                    // Add a visual indicator for debugging Kaynes
-                    if (placeId === 'kaynes') {
-                        btn.style.border = '3px solid red'; // Visual debug for Kaynes
-                        btn.style.boxShadow = '0 0 10px red'; // Extra visual indicator
-                        console.log('🔴 KAYNES DEBUG: Button should have red border and glow');
-                        
-                        // Also log button state
-                        console.log('🔴 KAYNES Button onclick:', btn.onclick);
-                        console.log('🔴 KAYNES Button ontouchend:', btn.ontouchend);
-                    }
-                } else {
-                    console.error('❌ Read Aloud button NOT found for:', placeId);
-                    // Emergency retry with delay
-                    setTimeout(() => {
-                        console.log('🆘 Emergency retry: initReadAloud for', placeId);
-                        initReadAloud();
-                    }, 100);
-                }
-            } catch (error) {
-                console.error('❌ Error in RAF callback:', error);
+            
+            // Visual debug for Kaynes
+            const btn = document.getElementById('readAloudBtn');
+            if (btn && placeId === 'kaynes') {
+                btn.style.border = '3px solid red';
+                btn.style.boxShadow = '0 0 10px red';
+                console.log('🔴 KAYNES: Red border applied');
             }
         });
     } catch (error) {
@@ -348,40 +315,25 @@ let touchStarted = false; // Track touch events for mobile
 
 function initReadAloud() {
     console.log('🎤 initReadAloud() called');
-    console.log('🔍 Modal active?', modal.classList.contains('active'));
-    console.log('🔍 Modal body exists?', !!modalBody);
     
-    // Try multiple ways to find the button
+    // Find button - try multiple selectors
     let readAloudBtn = document.getElementById('readAloudBtn');
     if (!readAloudBtn) {
-        console.warn('⚠️ Button not found by ID, trying class selector...');
         readAloudBtn = document.querySelector('.read-aloud-btn');
         if (readAloudBtn) {
-            console.log('✅ Found button by class, assigning ID');
             readAloudBtn.id = 'readAloudBtn';
         }
     }
     
     if (!readAloudBtn) {
-        console.error('❌ Read Aloud button not found at all');
-        console.error('🔍 Available buttons in modal:', document.querySelectorAll('.read-aloud-btn, #readAloudBtn').length);
+        console.error('❌ Read Aloud button not found');
         return;
     }
     
     console.log('✅ Read Aloud button found');
-    console.log('🔍 Button visible?', readAloudBtn.offsetParent !== null);
-    console.log('🔍 Button disabled?', readAloudBtn.disabled);
-    console.log('🔍 Button display:', window.getComputedStyle(readAloudBtn).display);
-    console.log('🔍 Button pointer-events:', window.getComputedStyle(readAloudBtn).pointerEvents);
-    
-    // Ensure button is visible and clickable
-    readAloudBtn.style.display = '';
-    readAloudBtn.style.pointerEvents = 'auto';
-    readAloudBtn.disabled = false;
     
     // Check browser support
     if (!('speechSynthesis' in window)) {
-        console.warn('⚠️ Speech synthesis not supported');
         readAloudBtn.style.display = 'none';
         return;
     }
@@ -389,69 +341,60 @@ function initReadAloud() {
     // Initialize speech synthesis
     if (!speechSynthesis) {
         speechSynthesis = window.speechSynthesis;
-        console.log('✅ Speech synthesis initialized');
     }
     
-    // Remove old listeners by cloning
+    // Don't clone - directly attach to existing button
+    // Cloning can sometimes break event handlers on mobile
+    readAloudBtn.style.display = '';
+    readAloudBtn.style.pointerEvents = 'auto';
+    readAloudBtn.disabled = false;
+    
+    // Remove ALL existing event listeners by replacing the button
+    // But this time, preserve the button structure more carefully
+    const parent = readAloudBtn.parentNode;
     const newBtn = readAloudBtn.cloneNode(true);
     newBtn.id = 'readAloudBtn';
-    newBtn.className = readAloudBtn.className; // Preserve classes
-    const parent = readAloudBtn.parentNode;
-    if (parent) {
-        parent.replaceChild(newBtn, readAloudBtn);
-        console.log('✅ Button cloned and replaced');
-    } else {
-        console.error('❌ Could not replace button - parent not found');
-        return;
-    }
+    newBtn.className = readAloudBtn.className;
+    parent.replaceChild(newBtn, readAloudBtn);
     
-    // Ensure new button is also visible
-    newBtn.style.display = '';
-    newBtn.style.pointerEvents = 'auto';
-    newBtn.disabled = false;
-    
-    // Handler function - defined once for reuse
+    // Set up the handler function
     const handleButtonClick = function(e) {
-        console.log('🔘 Button clicked/touched!', e.type, 'isReading:', isReading);
-        console.log('🔘 Event target:', e.target);
-        console.log('🔘 Current target:', e.currentTarget);
+        console.log('🔘 BUTTON CLICKED!', e.type);
         e.preventDefault();
         e.stopPropagation();
-        e.stopImmediatePropagation(); // Prevent other handlers
+        e.stopImmediatePropagation();
+        
         if (isReading) {
-            console.log('⏹️ Stopping read aloud');
             stopReadAloud();
         } else {
-            console.log('▶️ Starting read aloud');
             startReadAloudDirect(e);
         }
-        return false; // Extra safety
+        return false;
     };
     
-    // Attach handlers in multiple ways for maximum compatibility
-    // Method 1: addEventListener (preferred)
-    newBtn.addEventListener('click', handleButtonClick, { passive: false, capture: false });
-    newBtn.addEventListener('touchend', handleButtonClick, { passive: false, capture: false });
+    // Attach handlers - use capture phase to catch events early
+    newBtn.addEventListener('click', handleButtonClick, { capture: true, passive: false });
+    newBtn.addEventListener('touchend', handleButtonClick, { capture: true, passive: false });
     newBtn.addEventListener('touchstart', function(e) {
-        console.log('👆 Touch start detected on button');
-        // Prevent default to ensure touchend fires
+        console.log('👆 TOUCH START');
         e.preventDefault();
-    }, { passive: false });
+    }, { capture: true, passive: false });
     
-    // Method 2: Direct onclick (backup for mobile)
+    // Also attach in bubble phase
+    newBtn.addEventListener('click', handleButtonClick, { capture: false, passive: false });
+    newBtn.addEventListener('touchend', handleButtonClick, { capture: false, passive: false });
+    
+    // Direct property handlers (most reliable for mobile)
     newBtn.onclick = handleButtonClick;
-    
-    // Method 3: ontouchend (backup)
     newBtn.ontouchend = handleButtonClick;
     
-    // Method 4: Direct attribute (some mobile browsers)
-    newBtn.setAttribute('onclick', 'return false;'); // Will be overridden by onclick property
+    // Also handle clicks on child elements (spans inside button)
+    const spans = newBtn.querySelectorAll('span');
+    spans.forEach(span => {
+        span.style.pointerEvents = 'none'; // Let clicks pass through to button
+    });
     
-    // Verify handlers
-    console.log('✅ Event listeners attached to button');
-    console.log('🔍 Button onclick handler:', newBtn.onclick ? 'SET' : 'NOT SET');
-    console.log('🔍 Button ontouchend handler:', newBtn.ontouchend ? 'SET' : 'NOT SET');
-    console.log('🔍 Button element:', newBtn);
+    console.log('✅ Handlers attached - onclick:', !!newBtn.onclick, 'ontouchend:', !!newBtn.ontouchend);
 }
 
 // Direct start function - called immediately from user gesture (CRITICAL for mobile)
@@ -464,29 +407,21 @@ function startReadAloudDirect(event) {
         btn.classList.add('active');
         const spans = btn.querySelectorAll('span');
         if (spans.length > 1) spans[1].textContent = 'Stop Reading';
-        console.log('✅ Button state updated');
-    } else {
-        console.error('❌ Button not found in startReadAloudDirect');
     }
     
     if (!speechSynthesis) {
         if ('speechSynthesis' in window) {
             speechSynthesis = window.speechSynthesis;
-            console.log('✅ Speech synthesis initialized in startReadAloudDirect');
         } else {
-            console.error('❌ Speech synthesis not available');
             resetButtonState();
             return;
         }
     }
     
     if (!modalBody || !modalBody.innerHTML || !modalBody.innerHTML.trim()) {
-        console.error('❌ Modal body is empty or not found');
         resetButtonState();
         return;
     }
-    
-    console.log('✅ Modal body found, length:', modalBody.innerHTML.length);
     
     // Find blog content - try multiple selectors
     let blogContent = modalBody.querySelector('.blog-content') ||
@@ -496,35 +431,23 @@ function startReadAloudDirect(event) {
                      modalBody.querySelector('.place-card-content .blog-section');
     
     if (!blogContent) {
-        console.error('❌ Blog content not found. Selectors tried: .blog-content, .blog-section .blog-content, .blog-section, .place-card-content .blog-content, .place-card-content .blog-section');
-        console.log('Modal body HTML preview:', modalBody.innerHTML.substring(0, 200));
+        console.error('❌ Blog content not found');
         resetButtonState();
         return;
     }
-    
-    console.log('✅ Blog content found:', blogContent.className || 'no class');
     
     // Extract text - use textContent (works even if from hidden parent)
     let text = blogContent.textContent || blogContent.innerText || '';
-    console.log('📝 Extracted text length:', text.length);
     text = text.replace(/\s+/g, ' ').trim();
     
     if (!text || text.length < 10) {
-        console.error('❌ Text too short or empty:', text.length);
+        console.error('❌ Text too short');
         resetButtonState();
         return;
-    }
-    
-    console.log('✅ Text extracted successfully, length:', text.length);
-    
-    // Check protocol (HTTPS required for mobile)
-    if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
-        console.warn('⚠️ Not HTTPS - speech may not work on mobile');
     }
     
     // Cancel any existing speech
     if (speechSynthesis.speaking || speechSynthesis.pending) {
-        console.log('⏹️ Canceling existing speech');
         speechSynthesis.cancel();
     }
     
@@ -539,20 +462,17 @@ function startReadAloudDirect(event) {
     
     // Event handlers
     currentUtterance.onend = () => {
-        console.log('✅ Speech ended');
         resetButtonState();
     };
     
-    currentUtterance.onerror = (error) => {
-        console.error('❌ Speech error:', error);
+    currentUtterance.onerror = () => {
         resetButtonState();
     };
     
     // CRITICAL: Call speak() immediately (synchronously from user gesture)
     try {
-        console.log('🎤 Calling speechSynthesis.speak()...');
         speechSynthesis.speak(currentUtterance);
-        console.log('✅ speechSynthesis.speak() called successfully');
+        console.log('✅ Speech started');
     } catch (error) {
         console.error('❌ Error calling speak():', error);
         resetButtonState();
