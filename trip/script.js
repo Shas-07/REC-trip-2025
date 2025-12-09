@@ -352,13 +352,32 @@ function toggleReadAloud(event) {
     if (isReading) {
         stopReadAloud();
     } else {
-        startReadAloud();
+        // CRITICAL FOR MOBILE: Call startReadAloud directly from user gesture
+        // This ensures the user gesture chain is maintained for speech synthesis
+        startReadAloud(event);
     }
 }
 
-function startReadAloud() {
-    if (!speechSynthesis || !modalBody) {
-        console.warn('Speech synthesis or modal body not available');
+function startReadAloud(event) {
+    // For mobile: ensure we have speechSynthesis and it's ready
+    if (!speechSynthesis) {
+        if ('speechSynthesis' in window) {
+            speechSynthesis = window.speechSynthesis;
+        } else {
+            console.warn('Speech synthesis not available');
+            alert('Text-to-speech is not supported in your browser.');
+            return;
+        }
+    }
+    
+    if (!modalBody) {
+        console.warn('Modal body not available');
+        return;
+    }
+    
+    // Ensure modal is visible and content is loaded
+    if (!modalBody.innerHTML || !modalBody.innerHTML.trim()) {
+        console.warn('Modal body has no content');
         return;
     }
     
@@ -409,45 +428,70 @@ function startReadAloud() {
     if (!blogContent) {
         console.error('Blog content not found in modal');
         console.log('Modal body HTML:', modalBody.innerHTML.substring(0, 500));
+        console.log('Available elements in modal:', {
+            blogSection: modalBody.querySelector('.blog-section') ? 'found' : 'not found',
+            placeCardContent: modalBody.querySelector('.place-card-content') ? 'found' : 'not found',
+            totalChildren: modalBody.children.length
+        });
         return;
     }
     
+    console.log('Blog content found:', blogContent.className, blogContent.tagName);
+    
     // Get all text content from blog - use innerText for better results
+    // innerText is preferred as it excludes hidden elements and respects styling
     let text = '';
-    if (blogContent.innerText) {
-        text = blogContent.innerText;
-    } else if (blogContent.textContent) {
-        text = blogContent.textContent;
-    } else {
-        // Fallback: manually extract text from all child nodes
-        const walker = document.createTreeWalker(
-            blogContent,
-            NodeFilter.SHOW_TEXT,
-            null,
-            false
-        );
-        const textNodes = [];
-        let node;
-        while (node = walker.nextNode()) {
-            if (node.textContent.trim()) {
-                textNodes.push(node.textContent.trim());
+    try {
+        // Prefer innerText (excludes script/style, respects CSS visibility)
+        if (blogContent.innerText) {
+            text = blogContent.innerText;
+            console.log('Using innerText, length:', text.length);
+        } else if (blogContent.textContent) {
+            text = blogContent.textContent;
+            console.log('Using textContent, length:', text.length);
+        } else {
+            // Fallback: manually extract text from all child nodes
+            const walker = document.createTreeWalker(
+                blogContent,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            const textNodes = [];
+            let node;
+            while (node = walker.nextNode()) {
+                if (node.textContent.trim()) {
+                    textNodes.push(node.textContent.trim());
+                }
             }
+            text = textNodes.join(' ');
+            console.log('Using TreeWalker, extracted nodes:', textNodes.length);
         }
-        text = textNodes.join(' ');
+    } catch (e) {
+        console.error('Error extracting text:', e);
+        // Last resort: get textContent from the element directly
+        text = blogContent.textContent || '';
+        console.log('Using fallback textContent, length:', text.length);
     }
     
     // Clean up the text - remove extra whitespace and normalize
-    text = text.replace(/\s+/g, ' ').trim();
+    // Also filter out problematic characters for mobile speech synthesis
+    text = text
+        .replace(/\s+/g, ' ')  // Normalize whitespace
+        .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
+        .trim();
     
     if (!text || text.length < 10) {
         console.warn('No text content found in blog or text too short');
         console.log('Extracted text length:', text.length);
         console.log('Text preview:', text.substring(0, 100));
+        console.log('Blog content element:', blogContent);
+        console.log('Blog content innerHTML length:', blogContent.innerHTML ? blogContent.innerHTML.length : 0);
         return;
     }
     
-    console.log('Starting read aloud with text length:', text.length);
-    console.log('Text preview:', text.substring(0, 200));
+    console.log('✓ Starting read aloud with text length:', text.length);
+    console.log('Text preview (first 200 chars):', text.substring(0, 200));
     
     // Stop any existing speech - IMPORTANT for mobile browsers
     // Cancel immediately without delay to maintain user gesture chain
@@ -511,15 +555,29 @@ function startReadAloud() {
     
     // Call speak IMMEDIATELY from user gesture (critical for mobile browsers)
     // Mobile browsers require the speak() call to be in the direct user gesture handler
+    // This function MUST be called directly from the button click/touch event
+    // DO NOT use setTimeout, requestAnimationFrame, or any async operations here
     try {
-        // Ensure we're ready - some mobile browsers need this check
-        if (speechSynthesis.pending) {
+        // Cancel any pending/speaking speech first
+        if (speechSynthesis.speaking || speechSynthesis.pending) {
             speechSynthesis.cancel();
+            // Wait synchronously for cancel to process (microtask)
+            // We can't use setTimeout as it breaks gesture chain, so we rely on browser
+            // Most mobile browsers handle cancel() synchronously anyway
         }
+        
+        // CRITICAL: Call speak() synchronously within the user gesture handler
+        // This MUST happen immediately, no delays, no async operations
         speechSynthesis.speak(currentUtterance);
-        console.log('Speech started successfully');
+        console.log('Speech started successfully - utterance queued');
+        
     } catch (error) {
         console.error('Error starting speech synthesis:', error);
+        console.error('Error details:', {
+            name: error.name,
+            message: error.message,
+            stack: error.stack
+        });
         isReading = false;
         const btn = document.getElementById('readAloudBtn');
         if (btn) {
@@ -529,9 +587,11 @@ function startReadAloud() {
                 spans[1].textContent = 'Read Aloud';
             }
         }
-        // Mobile-friendly error message (only show if not a common mobile quirk)
-        if (error.name !== 'InvalidStateError') {
+        // Mobile-friendly error message
+        if (error.name !== 'InvalidStateError' && error.name !== 'NotAllowedError') {
             alert('Unable to start speech. Please ensure your browser supports text-to-speech and try again.');
+        } else if (error.name === 'NotAllowedError') {
+            console.warn('Speech synthesis not allowed - user may need to interact with page first');
         }
     }
 }
