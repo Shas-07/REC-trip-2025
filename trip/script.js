@@ -10,81 +10,48 @@ let currentLanguage = 'en';
 
 // Open modal with place content
 function openModal(placeId) {
-    try {
-        console.log('🔵 Opening modal for place:', placeId);
-        
-        // Find content - try all possible locations
-        let contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
-        let content = null;
-        
-        if (contentData) {
-            content = contentData.querySelector('.place-card-content');
-            console.log('✅ Found content in place-content-data for:', placeId);
-            console.log('📦 Content HTML length:', content ? content.innerHTML.length : 0);
-        }
-        
-        // If not found, try visible place-card
-        if (!content) {
-            const placeCard = document.querySelector(`.place-card[data-place="${placeId}"]`);
-            if (placeCard) {
-                content = placeCard.querySelector('.place-card-content');
-                console.log('✅ Found content in place-card for:', placeId);
-            }
-        }
-        
-        if (!content) {
-            console.error('❌ Content not found for place:', placeId);
-            console.error('🔍 Searched for:', `.place-content-data[data-place="${placeId}"]`);
-            return;
-        }
-        
-        // Store original content and load into modal
-        originalContent = content.innerHTML;
-        
-        // Clear modal body first
-        modalBody.innerHTML = '';
-        
-        // Load content
-        modalBody.innerHTML = originalContent;
-        
-        // Show modal
-        modal.classList.add('active');
-        document.body.style.overflow = 'hidden';
-        modalBody.scrollTop = 0;
-        
-        // Reset to English
-        currentLanguage = 'en';
-        stopReadAloud();
-        
-        console.log('🔄 Initializing features for:', placeId);
-        console.log('📦 Modal body HTML length:', modalBody.innerHTML.length);
-        console.log('🔍 Modal active class:', modal.classList.contains('active'));
-        
-        // Initialize features after modal is shown
-        requestAnimationFrame(() => {
-            initReadAloud();
-            initTranslate();
-            updateTranslateUI();
-            
-            // Visual debug for Kaynes
-            const btn = document.getElementById('readAloudBtn');
-            if (btn && placeId === 'kaynes') {
-                btn.style.border = '3px solid red';
-                btn.style.boxShadow = '0 0 10px red';
-                console.log('🔴 KAYNES: Red border applied');
-            }
-        });
-    } catch (error) {
-        console.error('❌ Error in openModal:', error);
-        console.error('❌ Error stack:', error.stack);
+    // Find content
+    let contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
+    let content = null;
+    
+    if (contentData) {
+        content = contentData.querySelector('.place-card-content');
     }
+    
+    if (!content) {
+        const placeCard = document.querySelector(`.place-card[data-place="${placeId}"]`);
+        if (placeCard) {
+            content = placeCard.querySelector('.place-card-content');
+        }
+    }
+    
+    if (!content) {
+        return;
+    }
+    
+    // Store and load content
+    originalContent = content.innerHTML;
+    modalBody.innerHTML = originalContent;
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    modalBody.scrollTop = 0;
+    
+    // Reset state
+    currentLanguage = 'en';
+    stopReadAloud();
+    
+    // Initialize features after DOM update
+    requestAnimationFrame(() => {
+        initReadAloud();
+        initTranslate();
+        updateTranslateUI();
+    });
 }
 
 // Close modal
 function closeModal() {
     modal.classList.remove('active');
     document.body.style.overflow = '';
-    // Stop any ongoing speech
     stopReadAloud();
 }
 
@@ -153,7 +120,6 @@ function showCityPopup(imageUrl, cityName) {
     document.body.appendChild(popup);
     document.body.style.overflow = 'hidden';
     
-    // Close popup
     const closeBtn = popup.querySelector('.popup-close');
     const overlay = popup.querySelector('.popup-overlay');
     
@@ -217,7 +183,6 @@ if (timetableClose && timetableSection) {
         document.body.style.overflow = '';
     });
     
-    // Close on escape key
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && timetableSection.style.display === 'block') {
             timetableSection.style.display = 'none';
@@ -285,137 +250,73 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     });
 });
 
-// Load original content from existing cards if available
-document.addEventListener('DOMContentLoaded', () => {
-    // Try to extract content from existing place cards
-    if (typeof placeContent !== 'undefined') {
-        Object.keys(placeContent).forEach(placeId => {
-            const originalCard = document.querySelector(`[data-place="${placeId}"]`)?.closest('.place-card');
-            if (originalCard) {
-                const content = originalCard.querySelector('.place-card-content');
-                if (content) {
-                    placeContent[placeId].content = content.innerHTML;
-                }
-            }
-        });
-    }
-    
-    // Initialize read aloud and translate features (will be re-initialized when modal opens)
-    setTimeout(() => {
-        initReadAloud();
-        initTranslate();
-    }, 500);
-});
-
 // Read Aloud functionality
 let speechSynthesis = null;
 let currentUtterance = null;
 let isReading = false;
-let touchStarted = false; // Track touch events for mobile
 
 function initReadAloud() {
-    console.log('🎤 initReadAloud() called');
-    
-    // Find button - try multiple selectors
-    let readAloudBtn = document.getElementById('readAloudBtn');
+    const readAloudBtn = document.getElementById('readAloudBtn');
     if (!readAloudBtn) {
-        readAloudBtn = document.querySelector('.read-aloud-btn');
-        if (readAloudBtn) {
-            readAloudBtn.id = 'readAloudBtn';
-        }
-    }
-    
-    if (!readAloudBtn) {
-        console.error('❌ Read Aloud button not found');
         return;
     }
     
-    console.log('✅ Read Aloud button found');
-    
-    // Check browser support
     if (!('speechSynthesis' in window)) {
         readAloudBtn.style.display = 'none';
         return;
     }
     
-    // Initialize speech synthesis
     if (!speechSynthesis) {
         speechSynthesis = window.speechSynthesis;
     }
     
-    // Don't clone - directly attach to existing button
-    // Cloning can sometimes break event handlers on mobile
-    readAloudBtn.style.display = '';
-    readAloudBtn.style.pointerEvents = 'auto';
-    readAloudBtn.disabled = false;
-    
-    // Remove ALL existing event listeners by replacing the button
-    // But this time, preserve the button structure more carefully
-    const parent = readAloudBtn.parentNode;
+    // Remove old listeners by cloning
     const newBtn = readAloudBtn.cloneNode(true);
     newBtn.id = 'readAloudBtn';
     newBtn.className = readAloudBtn.className;
-    parent.replaceChild(newBtn, readAloudBtn);
+    readAloudBtn.parentNode.replaceChild(newBtn, readAloudBtn);
     
-    // Set up the handler function
-    const handleButtonClick = function(e) {
-        console.log('🔘 BUTTON CLICKED!', e.type);
+    // Ensure button is clickable
+    newBtn.style.pointerEvents = 'auto';
+    newBtn.disabled = false;
+    
+    // Make child elements non-interactive so clicks go to button
+    const spans = newBtn.querySelectorAll('span');
+    spans.forEach(span => {
+        span.style.pointerEvents = 'none';
+    });
+    
+    // Handler function
+    const handleClick = function(e) {
         e.preventDefault();
         e.stopPropagation();
-        e.stopImmediatePropagation();
         
         if (isReading) {
             stopReadAloud();
         } else {
-            startReadAloudDirect(e);
+            startReadAloud();
         }
-        return false;
     };
     
-    // Attach handlers - use capture phase to catch events early
-    newBtn.addEventListener('click', handleButtonClick, { capture: true, passive: false });
-    newBtn.addEventListener('touchend', handleButtonClick, { capture: true, passive: false });
-    newBtn.addEventListener('touchstart', function(e) {
-        console.log('👆 TOUCH START');
-        e.preventDefault();
-    }, { capture: true, passive: false });
-    
-    // Also attach in bubble phase
-    newBtn.addEventListener('click', handleButtonClick, { capture: false, passive: false });
-    newBtn.addEventListener('touchend', handleButtonClick, { capture: false, passive: false });
-    
-    // Direct property handlers (most reliable for mobile)
-    newBtn.onclick = handleButtonClick;
-    newBtn.ontouchend = handleButtonClick;
-    
-    // Also handle clicks on child elements (spans inside button)
-    const spans = newBtn.querySelectorAll('span');
-    spans.forEach(span => {
-        span.style.pointerEvents = 'none'; // Let clicks pass through to button
-    });
-    
-    console.log('✅ Handlers attached - onclick:', !!newBtn.onclick, 'ontouchend:', !!newBtn.ontouchend);
+    // Attach event listeners
+    newBtn.addEventListener('click', handleClick, false);
+    newBtn.addEventListener('touchend', handleClick, false);
+    newBtn.onclick = handleClick;
+    newBtn.ontouchend = handleClick;
 }
 
-// Direct start function - called immediately from user gesture (CRITICAL for mobile)
-function startReadAloudDirect(event) {
-    console.log('🎙️ startReadAloudDirect() called');
-    
-    // Update button immediately
+function startReadAloud() {
     const btn = document.getElementById('readAloudBtn');
     if (btn) {
         btn.classList.add('active');
         const spans = btn.querySelectorAll('span');
-        if (spans.length > 1) spans[1].textContent = 'Stop Reading';
+        if (spans.length > 1) {
+            spans[1].textContent = 'Stop Reading';
+        }
     }
     
     if (!speechSynthesis) {
-        if ('speechSynthesis' in window) {
-            speechSynthesis = window.speechSynthesis;
-        } else {
-            resetButtonState();
-            return;
-        }
+        speechSynthesis = window.speechSynthesis;
     }
     
     if (!modalBody || !modalBody.innerHTML || !modalBody.innerHTML.trim()) {
@@ -423,7 +324,7 @@ function startReadAloudDirect(event) {
         return;
     }
     
-    // Find blog content - try multiple selectors
+    // Find blog content
     let blogContent = modalBody.querySelector('.blog-content') ||
                      modalBody.querySelector('.blog-section .blog-content') ||
                      modalBody.querySelector('.blog-section') ||
@@ -431,27 +332,25 @@ function startReadAloudDirect(event) {
                      modalBody.querySelector('.place-card-content .blog-section');
     
     if (!blogContent) {
-        console.error('❌ Blog content not found');
         resetButtonState();
         return;
     }
     
-    // Extract text - use textContent (works even if from hidden parent)
+    // Extract text
     let text = blogContent.textContent || blogContent.innerText || '';
     text = text.replace(/\s+/g, ' ').trim();
     
     if (!text || text.length < 10) {
-        console.error('❌ Text too short');
         resetButtonState();
         return;
     }
     
-    // Cancel any existing speech
+    // Cancel existing speech
     if (speechSynthesis.speaking || speechSynthesis.pending) {
         speechSynthesis.cancel();
     }
     
-    // Create utterance
+    // Create and speak utterance
     currentUtterance = new SpeechSynthesisUtterance(text);
     currentUtterance.lang = currentLanguage === 'en' ? 'en-US' : (currentLanguage === 'hi' ? 'hi-IN' : 'kn-IN');
     currentUtterance.rate = 0.9;
@@ -460,7 +359,6 @@ function startReadAloudDirect(event) {
     
     isReading = true;
     
-    // Event handlers
     currentUtterance.onend = () => {
         resetButtonState();
     };
@@ -469,19 +367,15 @@ function startReadAloudDirect(event) {
         resetButtonState();
     };
     
-    // CRITICAL: Call speak() immediately (synchronously from user gesture)
     try {
         speechSynthesis.speak(currentUtterance);
-        console.log('✅ Speech started');
     } catch (error) {
-        console.error('❌ Error calling speak():', error);
         resetButtonState();
     }
 }
 
 function stopReadAloud() {
     if (speechSynthesis) {
-        // Cancel all speech synthesis (important for mobile)
         if (speechSynthesis.speaking || speechSynthesis.pending) {
             speechSynthesis.cancel();
         }
@@ -490,7 +384,6 @@ function stopReadAloud() {
     resetButtonState();
 }
 
-// Helper function to reset button state
 function resetButtonState() {
     const readAloudBtn = document.getElementById('readAloudBtn');
     if (readAloudBtn) {
@@ -508,9 +401,11 @@ function initTranslate() {
     const translateBtn = document.getElementById('translateBtn');
     const translateDropdown = document.getElementById('translateDropdown');
     
-    if (!translateBtn || !translateDropdown) return;
+    if (!translateBtn || !translateDropdown) {
+        return;
+    }
     
-    // Remove existing event listeners by cloning
+    // Remove old listeners
     const newBtn = translateBtn.cloneNode(true);
     translateBtn.parentNode.replaceChild(newBtn, translateBtn);
     
@@ -529,7 +424,6 @@ function initTranslate() {
             newDropdown.classList.remove('show');
         }
     };
-    document.removeEventListener('click', clickHandler);
     document.addEventListener('click', clickHandler);
     
     // Handle language selection
@@ -559,35 +453,40 @@ function updateTranslateUI() {
 }
 
 async function translateContent(targetLang) {
-    if (!modalBody || !originalContent) return;
+    if (!modalBody || !originalContent) {
+        return;
+    }
     
     // If English, restore original content
     if (targetLang === 'en') {
         modalBody.innerHTML = originalContent;
         stopReadAloud();
-        // Re-initialize after restoring content
         requestAnimationFrame(() => {
             initReadAloud();
         });
         return;
     }
     
-    // Find blog content - same logic as read aloud
+    // Find blog content
     const blogContent = modalBody.querySelector('.blog-content') ||
                        modalBody.querySelector('.blog-section .blog-content') ||
                        modalBody.querySelector('.blog-section');
-    if (!blogContent) return;
+    
+    if (!blogContent) {
+        return;
+    }
     
     // Show loading state
     blogContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">Translating content...</p>';
     
     try {
-        // Extract text content from original - use textContent for reliability
+        // Extract text from original content
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = originalContent;
         const originalBlogContent = tempDiv.querySelector('.blog-content') ||
                                    tempDiv.querySelector('.blog-section .blog-content') ||
                                    tempDiv.querySelector('.blog-section');
+        
         if (!originalBlogContent) {
             modalBody.innerHTML = originalContent;
             requestAnimationFrame(() => {
@@ -596,10 +495,9 @@ async function translateContent(targetLang) {
             return;
         }
         
-        // Use textContent (same as read aloud for consistency)
         const textToTranslate = originalBlogContent.textContent || originalBlogContent.innerText || '';
         
-        // Use Google Translate API (public endpoint) - split into chunks if too long
+        // Split into chunks if too long
         const maxLength = 5000;
         let textChunks = [];
         if (textToTranslate.length > maxLength) {
@@ -631,9 +529,7 @@ async function translateContent(targetLang) {
         
                 if (response.ok) {
                     const data = await response.json();
-                    
                     if (data && data[0] && Array.isArray(data[0])) {
-                        // Extract translated text from chunk
                         data[0].forEach(item => {
                             if (item && item[0]) {
                                 translatedText += item[0];
@@ -658,7 +554,6 @@ async function translateContent(targetLang) {
             let sentenceIndex = 0;
             paragraphs.forEach((p) => {
                 if (sentenceIndex < translatedSentences.length) {
-                    // Get 2-4 sentences per paragraph
                     const sentencesPerPara = Math.min(3, translatedSentences.length - sentenceIndex);
                     const paraText = translatedSentences.slice(sentenceIndex, sentenceIndex + sentencesPerPara)
                         .join('. ').trim();
@@ -694,13 +589,11 @@ async function translateContent(targetLang) {
         }
     } catch (error) {
         console.error('Translation error:', error);
-        // Restore original content on error
         modalBody.innerHTML = originalContent;
         requestAnimationFrame(() => {
             initReadAloud();
         });
     }
     
-    // Stop any ongoing speech when language changes
     stopReadAloud();
 }
