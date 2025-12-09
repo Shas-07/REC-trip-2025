@@ -10,59 +10,51 @@ let currentLanguage = 'en';
 
 // Open modal with place content
 function openModal(placeId) {
-    // First try to get content from hidden content storage
+    console.log('Opening modal for place:', placeId);
+    
+    // Find content - try all possible locations
     let contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
     let content = null;
     
     if (contentData) {
         content = contentData.querySelector('.place-card-content');
+        console.log('Found content in place-content-data');
     }
     
-    // If not found in hidden section, try to get from visible place-card
+    // If not found, try visible place-card
     if (!content) {
         const placeCard = document.querySelector(`.place-card[data-place="${placeId}"]`);
         if (placeCard) {
             content = placeCard.querySelector('.place-card-content');
+            console.log('Found content in place-card');
         }
     }
     
-    if (content) {
-        // Store original content before any modifications
-        originalContent = content.innerHTML;
-        modalBody.innerHTML = originalContent;
-        modal.classList.add('active');
-        document.body.style.overflow = 'hidden';
-        // Scroll to top of modal
-        modalBody.scrollTop = 0;
-        // Reset language to English when opening new modal
-        currentLanguage = 'en';
-        // Stop any ongoing speech first
-        stopReadAloud();
-        
-        // Initialize features when modal opens - ensure content is loaded
-        // CRITICAL: Use requestAnimationFrame to ensure DOM is fully updated
-        // This is especially important for content loaded from hidden divs (like Kaynes)
-        requestAnimationFrame(() => {
-            console.log('🔄 Initializing features for place:', placeId);
-            console.log('Modal body exists:', !!modalBody);
-            console.log('Modal body has content:', modalBody ? (modalBody.innerHTML.length > 0) : false);
-            const btn = document.getElementById('readAloudBtn');
-            console.log('Read Aloud button exists before init:', !!btn);
-            if (btn) {
-                console.log('Button parent:', btn.parentElement ? btn.parentElement.tagName : 'none');
-            }
-            initReadAloud();
-            initTranslate();
-            updateTranslateUI();
-            
-            // Verify button after init
-            const btnAfter = document.getElementById('readAloudBtn');
-            console.log('Read Aloud button exists after init:', !!btnAfter);
-            if (btnAfter) {
-                console.log('Button has event listeners attached');
-            }
-        });
+    if (!content) {
+        console.error('Content not found for place:', placeId);
+        return;
     }
+    
+    // Store original content and load into modal
+    originalContent = content.innerHTML;
+    modalBody.innerHTML = originalContent;
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    modalBody.scrollTop = 0;
+    
+    // Reset to English
+    currentLanguage = 'en';
+    stopReadAloud();
+    
+        // Initialize features - ensure DOM is fully ready
+        // Use microtask + RAF for maximum compatibility
+        Promise.resolve().then(() => {
+            requestAnimationFrame(() => {
+                initReadAloud();
+                initTranslate();
+                updateTranslateUI();
+            });
+        });
 }
 
 // Close modal
@@ -299,510 +291,118 @@ let isReading = false;
 let touchStarted = false; // Track touch events for mobile
 
 function initReadAloud() {
-    console.log('🔄 Initializing Read Aloud...');
     const readAloudBtn = document.getElementById('readAloudBtn');
     if (!readAloudBtn) {
-        console.error('❌ Read Aloud button not found!');
-        console.log('Searching for button in document...');
-        // Try alternative methods to find button
-        const altBtn = document.querySelector('.read-aloud-btn');
-        if (altBtn) {
-            console.log('Found button via class selector');
-            altBtn.id = 'readAloudBtn';
-        } else {
-            console.error('Button not found by ID or class');
-            return;
-        }
+        console.warn('Read Aloud button not found');
+        return;
     }
     
-    console.log('✓ Button found:', readAloudBtn.id, readAloudBtn.className);
-    
-    // Check if browser supports speech synthesis
+    // Check browser support
     if (!('speechSynthesis' in window)) {
         readAloudBtn.style.display = 'none';
-        console.warn('Speech synthesis not supported in this browser');
         return;
     }
     
     // Initialize speech synthesis
     if (!speechSynthesis) {
         speechSynthesis = window.speechSynthesis;
-        console.log('✓ Speech synthesis initialized');
     }
     
-    // Remove existing event listeners by cloning (prevents duplicate handlers)
+    // Remove old listeners by cloning
     const newBtn = readAloudBtn.cloneNode(true);
     newBtn.id = 'readAloudBtn';
-    const parent = readAloudBtn.parentNode;
-    if (parent) {
-        parent.replaceChild(newBtn, readAloudBtn);
-        console.log('✓ Button cloned and replaced');
-    } else {
-        console.error('❌ Could not replace button - parent not found');
-        return;
-    }
+    readAloudBtn.parentNode.replaceChild(newBtn, readAloudBtn);
     
-    // CRITICAL: Attach handlers directly - no delays, no async
-    // This ensures the user gesture chain is maintained
-    
-    // Track touch for mobile
-    let isTouchEvent = false;
-    
-    // Touch start handler
-    newBtn.addEventListener('touchstart', function(e) {
-        console.log('👆 Touch start detected');
-        isTouchEvent = true;
-        touchStarted = true;
-    }, { passive: true, once: false });
-    
-    // Touch end handler - PRIMARY for mobile
-    // CRITICAL: Must call speak() directly from this handler for mobile browsers
-    newBtn.addEventListener('touchend', function(e) {
-        console.log('👆 Touch end detected', { isTouchEvent, touchStarted });
-        if (isTouchEvent || touchStarted) {
-            e.preventDefault();
-            e.stopPropagation();
-            isTouchEvent = false;
-            
-            console.log('📱 Calling handleReadAloudClick from touchend...');
-            // CRITICAL FOR MOBILE: Call the handler IMMEDIATELY and SYNCHRONOUSLY
-            // Do not wrap in any async operations - this breaks the gesture chain
-            try {
-                handleReadAloudClick(e);
-            } catch (err) {
-                console.error('❌ Error in touchend handler:', err);
-                resetButtonState();
-            }
-            
-            // Reset touch flag after a delay (doesn't affect gesture chain)
-            setTimeout(() => {
-                touchStarted = false;
-            }, 500);
-        }
-    }, { passive: false, once: false });
-    
-    // Click handler - for desktop and fallback
-    newBtn.addEventListener('click', function(e) {
-        console.log('🖱️ Click detected', { touchStarted, isTouchEvent });
-        // Skip if this was a touch event (already handled to prevent double-firing)
-        if (!touchStarted && !isTouchEvent) {
-            console.log('📱 Calling handleReadAloudClick from click...');
-            try {
-                handleReadAloudClick(e);
-            } catch (err) {
-                console.error('❌ Error in click handler:', err);
-                resetButtonState();
-            }
+    // Handler function - defined once for reuse
+    const handleButtonClick = function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isReading) {
+            stopReadAloud();
         } else {
-            console.log('⏭️ Skipping click handler (touch event detected)');
+            startReadAloudDirect(e);
         }
-    }, { once: false });
+    };
     
-    console.log('✅ Read Aloud button initialized successfully');
+    // Attach both click and touchend handlers
+    // Use addEventListener for better compatibility
+    newBtn.addEventListener('click', handleButtonClick, { passive: false });
+    newBtn.addEventListener('touchend', handleButtonClick, { passive: false });
 }
 
-// Separate handler function that does the actual work
-function handleReadAloudClick(event) {
-    console.log('🔊 Read Aloud button clicked!', { 
-        isReading, 
-        hasEvent: !!event,
-        modalBody: !!modalBody,
-        modalBodyContent: modalBody ? modalBody.innerHTML.length : 0
-    });
-    
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
+// Direct start function - called immediately from user gesture (CRITICAL for mobile)
+function startReadAloudDirect(event) {
+    // Update button immediately
+    const btn = document.getElementById('readAloudBtn');
+    if (btn) {
+        btn.classList.add('active');
+        const spans = btn.querySelectorAll('span');
+        if (spans.length > 1) spans[1].textContent = 'Stop Reading';
     }
     
-    if (isReading) {
-        console.log('Stopping read aloud...');
-        stopReadAloud();
-    } else {
-        console.log('Starting read aloud...');
-        
-        // Update button state IMMEDIATELY to show it's working
-        const readAloudBtn = document.getElementById('readAloudBtn');
-        if (readAloudBtn) {
-            readAloudBtn.classList.add('active');
-            const spans = readAloudBtn.querySelectorAll('span');
-            if (spans.length > 1) {
-                spans[1].textContent = 'Starting...';
-            }
-        }
-        
-        try {
-            // CRITICAL FOR MOBILE: Call startReadAloud IMMEDIATELY and SYNCHRONOUSLY
-            // This MUST be called directly from the user gesture handler
-            // No setTimeout, no requestAnimationFrame, no async operations
-            startReadAloud(event);
-        } catch (error) {
-            console.error('❌ Error in handleReadAloudClick:', error);
-            // Reset button state on error
-            if (readAloudBtn) {
-                readAloudBtn.classList.remove('active');
-                const spans = readAloudBtn.querySelectorAll('span');
-                if (spans.length > 1) {
-                    spans[1].textContent = 'Read Aloud';
-                }
-            }
-            alert('Error starting read aloud: ' + error.message);
-        }
-    }
-}
-
-// This function is kept for backwards compatibility but handleReadAloudClick is preferred
-function toggleReadAloud(event) {
-    handleReadAloudClick(event);
-}
-
-function startReadAloud(event) {
-    console.log('startReadAloud called', {
-        hasEvent: !!event,
-        protocol: location.protocol,
-        hostname: location.hostname,
-        hasSpeechSynthesis: 'speechSynthesis' in window,
-        hasModalBody: !!modalBody,
-        modalBodyContentLength: modalBody ? modalBody.innerHTML.length : 0
-    });
-    
-    // Check if we're on HTTPS (required for speech synthesis on mobile)
-    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-        console.warn('Speech synthesis requires HTTPS on mobile devices');
-        alert('Text-to-speech requires a secure connection (HTTPS). Please access this site via HTTPS.');
-        resetButtonState();
-        return;
-    }
-    
-    // For mobile: ensure we have speechSynthesis and it's ready
     if (!speechSynthesis) {
         if ('speechSynthesis' in window) {
             speechSynthesis = window.speechSynthesis;
-            console.log('✓ Speech synthesis initialized');
         } else {
-            console.warn('Speech synthesis not available');
-            alert('Text-to-speech is not supported in your browser.');
             resetButtonState();
             return;
         }
     }
     
-    if (!modalBody) {
-        console.error('❌ Modal body not available');
-        alert('Modal content not found. Please try closing and reopening the modal.');
+    if (!modalBody || !modalBody.innerHTML || !modalBody.innerHTML.trim()) {
         resetButtonState();
         return;
     }
     
-    // Ensure modal is visible and content is loaded
-    if (!modalBody.innerHTML || !modalBody.innerHTML.trim()) {
-        console.error('❌ Modal body has no content');
-        console.log('Modal body:', modalBody);
-        console.log('Modal body innerHTML length:', modalBody.innerHTML ? modalBody.innerHTML.length : 0);
-        alert('No content found in modal. Please try closing and reopening.');
+    // Find blog content - try multiple selectors
+    let blogContent = modalBody.querySelector('.blog-content') ||
+                     modalBody.querySelector('.blog-section .blog-content') ||
+                     modalBody.querySelector('.blog-section') ||
+                     modalBody.querySelector('.place-card-content .blog-content') ||
+                     modalBody.querySelector('.place-card-content .blog-section');
+    
+    if (!blogContent) {
         resetButtonState();
         return;
     }
     
-    console.log('✓ All basic checks passed, proceeding to find blog content...');
+    // Extract text - use textContent (works even if from hidden parent)
+    let text = blogContent.textContent || blogContent.innerText || '';
+    text = text.replace(/\s+/g, ' ').trim();
     
-    // Try multiple selectors to find blog content - more comprehensive approach
-    let blogContent = null;
-    
-    // First try: direct .blog-content selector
-    blogContent = modalBody.querySelector('.blog-content');
-    
-    // Second try: nested .blog-content within .blog-section
-    if (!blogContent) {
-        blogContent = modalBody.querySelector('.blog-section .blog-content');
-    }
-    
-    // Third try: get .blog-section and use it directly
-    if (!blogContent) {
-        const blogSection = modalBody.querySelector('.blog-section');
-        if (blogSection) {
-            blogContent = blogSection;
-        }
-    }
-    
-    // Fourth try: get any content from place-card-content
-    if (!blogContent) {
-        const placeCardContent = modalBody.querySelector('.place-card-content');
-        if (placeCardContent) {
-            // Try to find blog-content within it
-            blogContent = placeCardContent.querySelector('.blog-content') || 
-                         placeCardContent.querySelector('.blog-section .blog-content') ||
-                         placeCardContent.querySelector('.blog-section');
-        }
-    }
-    
-    // Last resort: use modalBody itself (fallback)
-    if (!blogContent) {
-        console.warn('Blog content not found with selectors, checking modal body structure');
-        console.log('Modal body classes:', modalBody.className);
-        console.log('Modal body children:', modalBody.children.length);
-        
-        // Try to find any content with text
-        const allContent = modalBody.querySelectorAll('p, h2, h3, h4, li, div');
-        if (allContent.length > 0) {
-            // Use the entire modal body as fallback
-            blogContent = modalBody;
-        }
-    }
-    
-    if (!blogContent) {
-        console.error('❌ Blog content not found in modal');
-        console.log('Modal body HTML (first 1000 chars):', modalBody.innerHTML.substring(0, 1000));
-        console.log('Available elements in modal:', {
-            blogSection: modalBody.querySelector('.blog-section') ? 'found' : 'not found',
-            placeCardContent: modalBody.querySelector('.place-card-content') ? 'found' : 'not found',
-            blogContent: modalBody.querySelector('.blog-content') ? 'found' : 'not found',
-            totalChildren: modalBody.children.length,
-            firstChildTag: modalBody.firstElementChild ? modalBody.firstElementChild.tagName : 'none',
-            firstChildClass: modalBody.firstElementChild ? modalBody.firstElementChild.className : 'none'
-        });
-        alert('Could not find content to read. Please try closing and reopening the modal.');
-        resetButtonState();
-        return;
-    }
-    
-    console.log('Blog content found:', blogContent.className, blogContent.tagName);
-    console.log('Blog content offsetParent:', blogContent.offsetParent);
-    console.log('Blog content display:', window.getComputedStyle(blogContent).display);
-    
-    // Get all text content from blog
-    // CRITICAL FIX FOR KAYNES: Content loaded from hidden parent may have empty innerText
-    // Use textContent as primary method for more reliable extraction
-    let text = '';
-    
-    try {
-        // Method 1: textContent (most reliable, works even if content came from hidden parent)
-        // This is especially important for Kaynes which is inside hiddenContent div
-        const textContentResult = blogContent.textContent || '';
-        if (textContentResult.trim().length > 10) {
-            text = textContentResult;
-            console.log('✓ Using textContent (most reliable), length:', text.length);
-        } 
-        // Method 2: innerText (fallback, respects CSS but may be empty)
-        else {
-            const innerTextResult = blogContent.innerText || '';
-            if (innerTextResult.trim().length > 10) {
-                text = innerTextResult;
-                console.log('✓ Using innerText (textContent was empty), length:', text.length);
-            }
-            // Method 3: Manual extraction via TreeWalker (last resort)
-            else {
-                console.log('Both textContent and innerText were empty, trying TreeWalker...');
-                const walker = document.createTreeWalker(
-                    blogContent,
-                    NodeFilter.SHOW_TEXT,
-                    {
-                        acceptNode: function(node) {
-                            // Skip script and style nodes
-                            const parent = node.parentElement;
-                            if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
-                                return NodeFilter.FILTER_REJECT;
-                            }
-                            return NodeFilter.FILTER_ACCEPT;
-                        }
-                    },
-                    false
-                );
-                const textNodes = [];
-                let node;
-                while (node = walker.nextNode()) {
-                    const trimmed = node.textContent.trim();
-                    if (trimmed.length > 0) {
-                        textNodes.push(trimmed);
-                    }
-                }
-                text = textNodes.join(' ');
-                console.log('✓ Using TreeWalker, extracted', textNodes.length, 'text nodes, total length:', text.length);
-            }
-        }
-    } catch (e) {
-        console.error('Error extracting text:', e);
-        // Last resort: direct textContent
-        text = blogContent.textContent || blogContent.innerText || '';
-        console.log('Using emergency fallback, length:', text.length);
-    }
-    
-    // Clean up the text - normalize whitespace
-    if (text) {
-        text = text
-            .replace(/\s+/g, ' ')  // Normalize all whitespace to single spaces
-            .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
-            .replace(/\n+/g, ' ')  // Replace newlines with spaces
-            .replace(/\r+/g, ' ')  // Replace carriage returns
-            .trim();
-    }
-    
-    // Validate we have sufficient text
     if (!text || text.length < 10) {
-        console.error('❌ Text extraction failed or text too short');
-        console.error('Text length:', text ? text.length : 0);
-        console.error('Text preview:', text ? text.substring(0, 100) : '(empty)');
-        console.error('Blog content element:', blogContent);
-        console.error('Blog content tagName:', blogContent.tagName);
-        console.error('Blog content className:', blogContent.className);
-        console.error('Blog content children count:', blogContent.children ? blogContent.children.length : 0);
-        console.error('Blog content innerHTML exists:', !!blogContent.innerHTML);
-        console.error('Blog content innerHTML length:', blogContent.innerHTML ? blogContent.innerHTML.length : 0);
-        
-        // Try one more thing - maybe the content is in a child element
-        const firstP = blogContent.querySelector('p');
-        if (firstP) {
-            console.log('Found first <p> tag, trying to extract from it');
-            text = firstP.innerText || firstP.textContent || '';
-            text = text.trim();
-            console.log('Extracted from first <p>, length:', text.length);
-        }
-        
-        if (!text || text.length < 10) {
-            console.error('❌ Still no text found after all attempts');
-            alert('Could not extract text content. The content may be empty or not properly loaded.');
-            resetButtonState();
-            return;
-        }
+        resetButtonState();
+        return;
     }
     
-    console.log('✓ Text extraction successful! Length:', text.length);
-    console.log('Text preview (first 300 chars):', text.substring(0, 300));
-    
-    // Stop any existing speech - IMPORTANT for mobile browsers
-    // Cancel immediately without delay to maintain user gesture chain
+    // Cancel any existing speech
     if (speechSynthesis.speaking || speechSynthesis.pending) {
         speechSynthesis.cancel();
     }
     
-    // Create new utterance IMMEDIATELY (no setTimeout to preserve user gesture)
+    // Create utterance
     currentUtterance = new SpeechSynthesisUtterance(text);
     currentUtterance.lang = currentLanguage === 'en' ? 'en-US' : (currentLanguage === 'hi' ? 'hi-IN' : 'kn-IN');
     currentUtterance.rate = 0.9;
     currentUtterance.pitch = 1;
     currentUtterance.volume = 1;
     
-    // Update button state
-    const readAloudBtn = document.getElementById('readAloudBtn');
-    if (readAloudBtn) {
-        readAloudBtn.classList.add('active');
-        const spans = readAloudBtn.querySelectorAll('span');
-        if (spans.length > 1) {
-            spans[1].textContent = 'Stop Reading';
-        } else if (spans.length === 1) {
-            // If only one span, add text after it
-            const textNode = document.createTextNode(' Stop Reading');
-            readAloudBtn.appendChild(textNode);
-        }
-    }
-    
     isReading = true;
     
-    // Handle speech end
+    // Event handlers
     currentUtterance.onend = () => {
-        isReading = false;
-        const btn = document.getElementById('readAloudBtn');
-        if (btn) {
-            btn.classList.remove('active');
-            const spans = btn.querySelectorAll('span');
-            if (spans.length > 1) {
-                spans[1].textContent = 'Read Aloud';
-            }
-        }
+        resetButtonState();
     };
     
-    // Handle speech error
-    currentUtterance.onerror = (event) => {
-        console.error('Speech synthesis error:', event);
-        isReading = false;
-        const btn = document.getElementById('readAloudBtn');
-        if (btn) {
-            btn.classList.remove('active');
-            const spans = btn.querySelectorAll('span');
-            if (spans.length > 1) {
-                spans[1].textContent = 'Read Aloud';
-            }
-        }
-        // Mobile-friendly error handling
-        if (event.error === 'not-allowed') {
-            console.warn('Speech synthesis not allowed - may need user permission');
-        }
+    currentUtterance.onerror = () => {
+        resetButtonState();
     };
     
-    // CRITICAL FOR MOBILE: Call speak() IMMEDIATELY from user gesture
-    // Mobile browsers require the speak() call to be DIRECTLY in the user gesture handler
-    // This function MUST be called synchronously from the button click/touch event
-    // DO NOT use setTimeout, requestAnimationFrame, Promise, or ANY async operations
-    
+    // CRITICAL: Call speak() immediately (synchronously from user gesture)
     try {
-        console.log('Attempting to start speech synthesis...');
-        console.log('Speech synthesis state:', {
-            speaking: speechSynthesis.speaking,
-            pending: speechSynthesis.pending,
-            paused: speechSynthesis.paused
-        });
-        
-        // Cancel any pending/speaking speech first (synchronous operation)
-        if (speechSynthesis.speaking || speechSynthesis.pending) {
-            console.log('Cancelling existing speech...');
-            speechSynthesis.cancel();
-            // Note: On mobile, cancel() may be synchronous, so we proceed immediately
-        }
-        
-        // CRITICAL FOR MOBILE: Call speak() SYNCHRONOUSLY within the user gesture handler
-        // This is THE MOST IMPORTANT part - must be immediate, no delays
-        console.log('Calling speechSynthesis.speak() NOW (synchronously)...');
-        console.log('Current URL:', window.location.href);
-        console.log('Protocol:', window.location.protocol);
-        
-        // Direct synchronous call - NO async operations
         speechSynthesis.speak(currentUtterance);
-        
-        console.log('✓ speechSynthesis.speak() called successfully');
-        console.log('Speech synthesis state after speak():', {
-            speaking: speechSynthesis.speaking,
-            pending: speechSynthesis.pending,
-            paused: speechSynthesis.paused,
-            hasUtterance: !!currentUtterance,
-            utteranceTextLength: currentUtterance ? currentUtterance.text.length : 0
-        });
-        
-        // Verify it worked (check after a brief moment - this doesn't affect gesture chain)
-        setTimeout(() => {
-            if (!speechSynthesis.speaking && !speechSynthesis.pending) {
-                console.warn('⚠️ Speech may not have started');
-                console.warn('Possible issues:');
-                console.warn('1. Mobile browser requires direct user gesture');
-                console.warn('2. Browser permissions for speech/audio');
-                console.warn('3. HTTPS required on mobile - current:', window.location.protocol);
-                console.warn('4. Some mobile browsers disable speech in certain contexts');
-            } else {
-                console.log('✓ Speech synthesis started successfully!');
-            }
-        }, 200);
-        
     } catch (error) {
-        console.error('Error starting speech synthesis:', error);
-        console.error('Error details:', {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-        });
-        isReading = false;
-        const btn = document.getElementById('readAloudBtn');
-        if (btn) {
-            btn.classList.remove('active');
-            const spans = btn.querySelectorAll('span');
-            if (spans.length > 1) {
-                spans[1].textContent = 'Read Aloud';
-            }
-        }
-        // Mobile-friendly error message
-        if (error.name !== 'InvalidStateError' && error.name !== 'NotAllowedError') {
-            alert('Unable to start speech. Please ensure your browser supports text-to-speech and try again.');
-        } else if (error.name === 'NotAllowedError') {
-            console.warn('Speech synthesis not allowed - user may need to interact with page first');
-        }
+        resetButtonState();
     }
 }
 
@@ -892,26 +492,39 @@ async function translateContent(targetLang) {
     if (targetLang === 'en') {
         modalBody.innerHTML = originalContent;
         stopReadAloud();
+        // Re-initialize after restoring content
+        requestAnimationFrame(() => {
+            initReadAloud();
+        });
         return;
     }
     
-    const blogContent = modalBody.querySelector('.blog-content');
+    // Find blog content - same logic as read aloud
+    const blogContent = modalBody.querySelector('.blog-content') ||
+                       modalBody.querySelector('.blog-section .blog-content') ||
+                       modalBody.querySelector('.blog-section');
     if (!blogContent) return;
     
     // Show loading state
     blogContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">Translating content...</p>';
     
     try {
-        // Extract text content from original
+        // Extract text content from original - use textContent for reliability
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = originalContent;
-        const originalBlogContent = tempDiv.querySelector('.blog-content');
+        const originalBlogContent = tempDiv.querySelector('.blog-content') ||
+                                   tempDiv.querySelector('.blog-section .blog-content') ||
+                                   tempDiv.querySelector('.blog-section');
         if (!originalBlogContent) {
             modalBody.innerHTML = originalContent;
+            requestAnimationFrame(() => {
+                initReadAloud();
+            });
             return;
         }
         
-        const textToTranslate = originalBlogContent.innerText || originalBlogContent.textContent;
+        // Use textContent (same as read aloud for consistency)
+        const textToTranslate = originalBlogContent.textContent || originalBlogContent.innerText || '';
         
         // Use Google Translate API (public endpoint) - split into chunks if too long
         const maxLength = 5000;
@@ -993,15 +606,26 @@ async function translateContent(targetLang) {
             }
             
             modalBody.innerHTML = tempDiv.innerHTML;
+            
+            // Re-initialize read aloud after translation
+            requestAnimationFrame(() => {
+                initReadAloud();
+            });
         } else {
             // Restore original on error
             modalBody.innerHTML = originalContent;
+            requestAnimationFrame(() => {
+                initReadAloud();
+            });
             alert('Translation failed. Please check your internet connection and try again.');
         }
     } catch (error) {
         console.error('Translation error:', error);
         // Restore original content on error
         modalBody.innerHTML = originalContent;
+        requestAnimationFrame(() => {
+            initReadAloud();
+        });
     }
     
     // Stop any ongoing speech when language changes
