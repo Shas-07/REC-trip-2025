@@ -41,7 +41,7 @@ function openModal(placeId) {
             initReadAloud();
             initTranslate();
             updateTranslateUI();
-        }, 100);
+        }, 200);
         // Stop any ongoing speech
         stopReadAloud();
     }
@@ -281,22 +281,35 @@ let isReading = false;
 
 function initReadAloud() {
     const readAloudBtn = document.getElementById('readAloudBtn');
-    if (!readAloudBtn) return;
+    if (!readAloudBtn) {
+        console.warn('Read Aloud button not found');
+        return;
+    }
     
     // Remove existing event listeners by cloning
     const newBtn = readAloudBtn.cloneNode(true);
+    // Ensure ID is preserved
+    newBtn.id = 'readAloudBtn';
     readAloudBtn.parentNode.replaceChild(newBtn, readAloudBtn);
     
     // Check if browser supports speech synthesis
     if ('speechSynthesis' in window) {
         speechSynthesis = window.speechSynthesis;
         newBtn.addEventListener('click', toggleReadAloud);
+        console.log('Read Aloud initialized successfully');
     } else {
         newBtn.style.display = 'none';
+        console.warn('Speech synthesis not supported in this browser');
     }
 }
 
-function toggleReadAloud() {
+function toggleReadAloud(event) {
+    // Prevent any default behavior
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+    }
+    
     if (isReading) {
         stopReadAloud();
     } else {
@@ -305,14 +318,40 @@ function toggleReadAloud() {
 }
 
 function startReadAloud() {
-    if (!speechSynthesis || !modalBody) return;
+    if (!speechSynthesis || !modalBody) {
+        console.warn('Speech synthesis or modal body not available');
+        return;
+    }
     
-    const blogContent = modalBody.querySelector('.blog-content');
-    if (!blogContent) return;
+    // Try multiple selectors to find blog content
+    let blogContent = modalBody.querySelector('.blog-content');
+    if (!blogContent) {
+        // Try alternative selectors
+        blogContent = modalBody.querySelector('.blog-section .blog-content');
+    }
+    if (!blogContent) {
+        // Try getting from blog-section directly
+        const blogSection = modalBody.querySelector('.blog-section');
+        if (blogSection) {
+            blogContent = blogSection;
+        }
+    }
+    if (!blogContent) {
+        console.warn('Blog content not found in modal');
+        console.log('Modal body content:', modalBody.innerHTML.substring(0, 200));
+        return;
+    }
     
-    // Get all text content from blog
-    const text = blogContent.innerText || blogContent.textContent;
-    if (!text.trim()) return;
+    // Get all text content from blog, excluding emojis for better speech
+    let text = blogContent.innerText || blogContent.textContent;
+    // Clean up the text - remove extra whitespace and normalize
+    text = text.replace(/\s+/g, ' ').trim();
+    if (!text) {
+        console.warn('No text content found in blog');
+        return;
+    }
+    
+    console.log('Starting read aloud with text length:', text.length);
     
     // Stop any existing speech
     stopReadAloud();
@@ -367,7 +406,22 @@ function startReadAloud() {
         }
     };
     
-    speechSynthesis.speak(currentUtterance);
+    // Some browsers require user interaction first
+    try {
+        speechSynthesis.speak(currentUtterance);
+    } catch (error) {
+        console.error('Error starting speech synthesis:', error);
+        isReading = false;
+        const btn = document.getElementById('readAloudBtn');
+        if (btn) {
+            btn.classList.remove('active');
+            const spans = btn.querySelectorAll('span');
+            if (spans.length > 1) {
+                spans[1].textContent = 'Read Aloud';
+            }
+        }
+        alert('Unable to start speech. Please ensure your browser supports text-to-speech and try again.');
+    }
 }
 
 function stopReadAloud() {
