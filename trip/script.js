@@ -326,14 +326,31 @@ function initReadAloud() {
     // Try multiple times to find button - especially important for first modal open
     let readAloudBtn = document.getElementById('readAloudBtn');
     
-    // If not found, try again after a short delay (for first modal open)
+    // CRITICAL: For first modal open, try multiple times with increasing delays
     if (!readAloudBtn) {
-        setTimeout(() => {
+        // Try immediately after a frame
+        requestAnimationFrame(() => {
             readAloudBtn = document.getElementById('readAloudBtn');
             if (readAloudBtn) {
                 initializeButtonHandlers(readAloudBtn);
+            } else {
+                // Try again after 50ms
+                setTimeout(() => {
+                    readAloudBtn = document.getElementById('readAloudBtn');
+                    if (readAloudBtn) {
+                        initializeButtonHandlers(readAloudBtn);
+                    } else {
+                        // Final try after 150ms
+                        setTimeout(() => {
+                            readAloudBtn = document.getElementById('readAloudBtn');
+                            if (readAloudBtn) {
+                                initializeButtonHandlers(readAloudBtn);
+                            }
+                        }, 150);
+                    }
+                }, 50);
             }
-        }, 100);
+        });
         return;
     }
     
@@ -354,12 +371,24 @@ function initializeButtonHandlers(readAloudBtn) {
         speechSynthesis = window.speechSynthesis;
     }
     
-    // Remove any existing event listeners by cloning the button
-    // This ensures we don't have duplicate listeners
-    const newBtn = readAloudBtn.cloneNode(true);
-    newBtn.id = 'readAloudBtn';
-    readAloudBtn.parentNode.replaceChild(newBtn, readAloudBtn);
-    readAloudBtn = document.getElementById('readAloudBtn');
+    // CRITICAL FOR FIRST MODAL: Don't clone on first initialization
+    // Only clone if button already has handlers (subsequent opens)
+    const isAlreadyInitialized = readAloudBtn.hasAttribute('data-initialized');
+    
+    if (isAlreadyInitialized) {
+        // Remove any existing event listeners by cloning the button
+        // This ensures we don't have duplicate listeners on subsequent opens
+        const newBtn = readAloudBtn.cloneNode(true);
+        newBtn.id = 'readAloudBtn';
+        if (readAloudBtn.parentNode) {
+            readAloudBtn.parentNode.replaceChild(newBtn, readAloudBtn);
+        }
+        readAloudBtn = document.getElementById('readAloudBtn');
+        if (!readAloudBtn) return;
+    }
+    
+    // Mark as initialized
+    readAloudBtn.setAttribute('data-initialized', 'true');
     
     // Ensure button is clickable
     readAloudBtn.style.pointerEvents = 'auto';
@@ -571,11 +600,14 @@ function initializeButtonHandlers(readAloudBtn) {
     };
     
     // Attach handlers directly - use both click and touch for maximum compatibility
-    // Use capture phase to ensure we get the event first
+    // CRITICAL FOR MOBILE: Set onclick FIRST (before addEventListener) for better mobile compatibility
+    readAloudBtn.onclick = handleButtonClick;
+    
+    // Then addEventListener with capture phase
     readAloudBtn.addEventListener('click', handleButtonClick, { passive: false, capture: true });
     
-    // Also set onclick as backup (critical for first modal open)
-    readAloudBtn.onclick = handleButtonClick;
+    // Also add with bubble phase as extra backup
+    readAloudBtn.addEventListener('click', handleButtonClick, { passive: false });
     
     // For mobile - handle touch events properly
     let touchStarted = false;
