@@ -40,24 +40,11 @@ function openModal(placeId) {
         stopReadAloud();
         
         // Initialize features when modal opens - ensure content is loaded
-        // Use requestAnimationFrame for better timing on mobile
-        requestAnimationFrame(() => {
-            // Double check content is loaded
-            if (modalBody.innerHTML && modalBody.innerHTML.trim()) {
-                initReadAloud();
-                initTranslate();
-                updateTranslateUI();
-            } else {
-                // Retry if content not ready - but use shorter timeout
-                setTimeout(() => {
-                    if (modalBody.innerHTML && modalBody.innerHTML.trim()) {
-                        initReadAloud();
-                        initTranslate();
-                        updateTranslateUI();
-                    }
-                }, 50);
-            }
-        });
+        // For mobile: initialize immediately, no delays
+        // Content should already be loaded since we just set modalBody.innerHTML
+        initReadAloud();
+        initTranslate();
+        updateTranslateUI();
     }
 }
 
@@ -331,14 +318,22 @@ function initReadAloud() {
     }, { passive: true, once: false });
     
     // Touch end handler - PRIMARY for mobile
+    // CRITICAL: Must call speak() directly from this handler for mobile browsers
     newBtn.addEventListener('touchend', function(e) {
-        if (isTouchEvent) {
+        if (isTouchEvent || touchStarted) {
             e.preventDefault();
             e.stopPropagation();
             isTouchEvent = false;
-            // Call directly - maintains gesture chain
-            handleReadAloudClick(e);
-            // Reset touch flag after a delay
+            
+            // CRITICAL FOR MOBILE: Call the handler IMMEDIATELY and SYNCHRONOUSLY
+            // Do not wrap in any async operations - this breaks the gesture chain
+            try {
+                handleReadAloudClick(e);
+            } catch (err) {
+                console.error('Error in touchend handler:', err);
+            }
+            
+            // Reset touch flag after a delay (doesn't affect gesture chain)
             setTimeout(() => {
                 touchStarted = false;
             }, 500);
@@ -347,9 +342,13 @@ function initReadAloud() {
     
     // Click handler - for desktop and fallback
     newBtn.addEventListener('click', function(e) {
-        // Skip if this was a touch event (already handled)
-        if (!touchStarted) {
-            handleReadAloudClick(e);
+        // Skip if this was a touch event (already handled to prevent double-firing)
+        if (!touchStarted && !isTouchEvent) {
+            try {
+                handleReadAloudClick(e);
+            } catch (err) {
+                console.error('Error in click handler:', err);
+            }
         }
     }, { once: false });
     
@@ -370,7 +369,9 @@ function handleReadAloudClick(event) {
         stopReadAloud();
     } else {
         console.log('Starting read aloud...');
-        // Call startReadAloud directly - this maintains the user gesture
+        // CRITICAL FOR MOBILE: Call startReadAloud IMMEDIATELY and SYNCHRONOUSLY
+        // This MUST be called directly from the user gesture handler
+        // No setTimeout, no requestAnimationFrame, no async operations
         startReadAloud(event);
     }
 }
@@ -381,6 +382,13 @@ function toggleReadAloud(event) {
 }
 
 function startReadAloud(event) {
+    // Check if we're on HTTPS (required for speech synthesis on mobile)
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        console.warn('Speech synthesis requires HTTPS on mobile devices');
+        alert('Text-to-speech requires a secure connection (HTTPS). Please access this site via HTTPS.');
+        return;
+    }
+    
     // For mobile: ensure we have speechSynthesis and it's ready
     if (!speechSynthesis) {
         if ('speechSynthesis' in window) {
@@ -609,10 +617,11 @@ function startReadAloud(event) {
         }
     };
     
-    // Call speak IMMEDIATELY from user gesture (critical for mobile browsers)
-    // Mobile browsers require the speak() call to be in the direct user gesture handler
-    // This function MUST be called directly from the button click/touch event
-    // DO NOT use setTimeout, requestAnimationFrame, or any async operations here
+    // CRITICAL FOR MOBILE: Call speak() IMMEDIATELY from user gesture
+    // Mobile browsers require the speak() call to be DIRECTLY in the user gesture handler
+    // This function MUST be called synchronously from the button click/touch event
+    // DO NOT use setTimeout, requestAnimationFrame, Promise, or ANY async operations
+    
     try {
         console.log('Attempting to start speech synthesis...');
         console.log('Speech synthesis state:', {
@@ -621,22 +630,44 @@ function startReadAloud(event) {
             paused: speechSynthesis.paused
         });
         
-        // Cancel any pending/speaking speech first
+        // Cancel any pending/speaking speech first (synchronous operation)
         if (speechSynthesis.speaking || speechSynthesis.pending) {
             console.log('Cancelling existing speech...');
             speechSynthesis.cancel();
+            // Note: On mobile, cancel() may be synchronous, so we proceed immediately
         }
         
-        // CRITICAL: Call speak() synchronously within the user gesture handler
-        // This MUST happen immediately, no delays, no async operations
-        console.log('Calling speechSynthesis.speak()...');
+        // CRITICAL FOR MOBILE: Call speak() SYNCHRONOUSLY within the user gesture handler
+        // This is THE MOST IMPORTANT part - must be immediate, no delays
+        console.log('Calling speechSynthesis.speak() NOW (synchronously)...');
+        console.log('Current URL:', window.location.href);
+        console.log('Protocol:', window.location.protocol);
+        
+        // Direct synchronous call - NO async operations
         speechSynthesis.speak(currentUtterance);
+        
         console.log('✓ speechSynthesis.speak() called successfully');
         console.log('Speech synthesis state after speak():', {
             speaking: speechSynthesis.speaking,
             pending: speechSynthesis.pending,
-            paused: speechSynthesis.paused
+            paused: speechSynthesis.paused,
+            hasUtterance: !!currentUtterance,
+            utteranceTextLength: currentUtterance ? currentUtterance.text.length : 0
         });
+        
+        // Verify it worked (check after a brief moment - this doesn't affect gesture chain)
+        setTimeout(() => {
+            if (!speechSynthesis.speaking && !speechSynthesis.pending) {
+                console.warn('⚠️ Speech may not have started');
+                console.warn('Possible issues:');
+                console.warn('1. Mobile browser requires direct user gesture');
+                console.warn('2. Browser permissions for speech/audio');
+                console.warn('3. HTTPS required on mobile - current:', window.location.protocol);
+                console.warn('4. Some mobile browsers disable speech in certain contexts');
+            } else {
+                console.log('✓ Speech synthesis started successfully!');
+            }
+        }, 200);
         
     } catch (error) {
         console.error('Error starting speech synthesis:', error);
