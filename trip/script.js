@@ -36,14 +36,25 @@ function openModal(placeId) {
         modalBody.scrollTop = 0;
         // Reset language to English when opening new modal
         currentLanguage = 'en';
-        // Initialize features when modal opens
-        setTimeout(() => {
-            initReadAloud();
-            initTranslate();
-            updateTranslateUI();
-        }, 200);
-        // Stop any ongoing speech
+        // Stop any ongoing speech first
         stopReadAloud();
+        
+        // Initialize features when modal opens - ensure content is loaded
+        setTimeout(() => {
+            // Double check content is loaded
+            if (modalBody.innerHTML && modalBody.innerHTML.trim()) {
+                initReadAloud();
+                initTranslate();
+                updateTranslateUI();
+            } else {
+                // Retry if content not ready
+                setTimeout(() => {
+                    initReadAloud();
+                    initTranslate();
+                    updateTranslateUI();
+                }, 100);
+            }
+        }, 100);
     }
 }
 
@@ -351,35 +362,92 @@ function startReadAloud() {
         return;
     }
     
-    // Try multiple selectors to find blog content
-    let blogContent = modalBody.querySelector('.blog-content');
+    // Try multiple selectors to find blog content - more comprehensive approach
+    let blogContent = null;
+    
+    // First try: direct .blog-content selector
+    blogContent = modalBody.querySelector('.blog-content');
+    
+    // Second try: nested .blog-content within .blog-section
     if (!blogContent) {
-        // Try alternative selectors
         blogContent = modalBody.querySelector('.blog-section .blog-content');
     }
+    
+    // Third try: get .blog-section and use it directly
     if (!blogContent) {
-        // Try getting from blog-section directly
         const blogSection = modalBody.querySelector('.blog-section');
         if (blogSection) {
             blogContent = blogSection;
         }
     }
+    
+    // Fourth try: get any content from place-card-content
     if (!blogContent) {
-        console.warn('Blog content not found in modal');
-        console.log('Modal body content:', modalBody.innerHTML.substring(0, 200));
+        const placeCardContent = modalBody.querySelector('.place-card-content');
+        if (placeCardContent) {
+            // Try to find blog-content within it
+            blogContent = placeCardContent.querySelector('.blog-content') || 
+                         placeCardContent.querySelector('.blog-section .blog-content') ||
+                         placeCardContent.querySelector('.blog-section');
+        }
+    }
+    
+    // Last resort: use modalBody itself (fallback)
+    if (!blogContent) {
+        console.warn('Blog content not found with selectors, checking modal body structure');
+        console.log('Modal body classes:', modalBody.className);
+        console.log('Modal body children:', modalBody.children.length);
+        
+        // Try to find any content with text
+        const allContent = modalBody.querySelectorAll('p, h2, h3, h4, li, div');
+        if (allContent.length > 0) {
+            // Use the entire modal body as fallback
+            blogContent = modalBody;
+        }
+    }
+    
+    if (!blogContent) {
+        console.error('Blog content not found in modal');
+        console.log('Modal body HTML:', modalBody.innerHTML.substring(0, 500));
         return;
     }
     
-    // Get all text content from blog, excluding emojis for better speech
-    let text = blogContent.innerText || blogContent.textContent;
+    // Get all text content from blog - use innerText for better results
+    let text = '';
+    if (blogContent.innerText) {
+        text = blogContent.innerText;
+    } else if (blogContent.textContent) {
+        text = blogContent.textContent;
+    } else {
+        // Fallback: manually extract text from all child nodes
+        const walker = document.createTreeWalker(
+            blogContent,
+            NodeFilter.SHOW_TEXT,
+            null,
+            false
+        );
+        const textNodes = [];
+        let node;
+        while (node = walker.nextNode()) {
+            if (node.textContent.trim()) {
+                textNodes.push(node.textContent.trim());
+            }
+        }
+        text = textNodes.join(' ');
+    }
+    
     // Clean up the text - remove extra whitespace and normalize
     text = text.replace(/\s+/g, ' ').trim();
-    if (!text) {
-        console.warn('No text content found in blog');
+    
+    if (!text || text.length < 10) {
+        console.warn('No text content found in blog or text too short');
+        console.log('Extracted text length:', text.length);
+        console.log('Text preview:', text.substring(0, 100));
         return;
     }
     
     console.log('Starting read aloud with text length:', text.length);
+    console.log('Text preview:', text.substring(0, 200));
     
     // Stop any existing speech - IMPORTANT for mobile browsers
     // Cancel immediately without delay to maintain user gesture chain
