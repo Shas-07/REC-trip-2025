@@ -278,6 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
 let speechSynthesis = null;
 let currentUtterance = null;
 let isReading = false;
+let touchStarted = false; // Track touch events for mobile
 
 function initReadAloud() {
     const readAloudBtn = document.getElementById('readAloudBtn');
@@ -295,8 +296,35 @@ function initReadAloud() {
     // Check if browser supports speech synthesis
     if ('speechSynthesis' in window) {
         speechSynthesis = window.speechSynthesis;
-        newBtn.addEventListener('click', toggleReadAloud);
-        console.log('Read Aloud initialized successfully');
+        
+        // Mobile-friendly touch handling
+        // Handle touch start to track user interaction
+        newBtn.addEventListener('touchstart', function(e) {
+            touchStarted = true;
+        }, { passive: true });
+        
+        // Handle touch end - critical for mobile browsers
+        newBtn.addEventListener('touchend', function(e) {
+            if (touchStarted) {
+                e.preventDefault();
+                e.stopPropagation();
+                toggleReadAloud(e);
+                // Reset after a short delay to allow click to be ignored
+                setTimeout(() => {
+                    touchStarted = false;
+                }, 300);
+            }
+        }, { passive: false });
+        
+        // Handle click for desktop and as fallback
+        newBtn.addEventListener('click', function(e) {
+            // Only handle if not from touch (to avoid double-firing)
+            if (!touchStarted) {
+                toggleReadAloud(e);
+            }
+        });
+        
+        console.log('Read Aloud initialized successfully (mobile-ready)');
     } else {
         newBtn.style.display = 'none';
         console.warn('Speech synthesis not supported in this browser');
@@ -353,10 +381,13 @@ function startReadAloud() {
     
     console.log('Starting read aloud with text length:', text.length);
     
-    // Stop any existing speech
-    stopReadAloud();
+    // Stop any existing speech - IMPORTANT for mobile browsers
+    // Cancel immediately without delay to maintain user gesture chain
+    if (speechSynthesis.speaking || speechSynthesis.pending) {
+        speechSynthesis.cancel();
+    }
     
-    // Create new utterance
+    // Create new utterance IMMEDIATELY (no setTimeout to preserve user gesture)
     currentUtterance = new SpeechSynthesisUtterance(text);
     currentUtterance.lang = currentLanguage === 'en' ? 'en-US' : (currentLanguage === 'hi' ? 'hi-IN' : 'kn-IN');
     currentUtterance.rate = 0.9;
@@ -404,11 +435,21 @@ function startReadAloud() {
                 spans[1].textContent = 'Read Aloud';
             }
         }
+        // Mobile-friendly error handling
+        if (event.error === 'not-allowed') {
+            console.warn('Speech synthesis not allowed - may need user permission');
+        }
     };
     
-    // Some browsers require user interaction first
+    // Call speak IMMEDIATELY from user gesture (critical for mobile browsers)
+    // Mobile browsers require the speak() call to be in the direct user gesture handler
     try {
+        // Ensure we're ready - some mobile browsers need this check
+        if (speechSynthesis.pending) {
+            speechSynthesis.cancel();
+        }
         speechSynthesis.speak(currentUtterance);
+        console.log('Speech started successfully');
     } catch (error) {
         console.error('Error starting speech synthesis:', error);
         isReading = false;
@@ -420,13 +461,19 @@ function startReadAloud() {
                 spans[1].textContent = 'Read Aloud';
             }
         }
-        alert('Unable to start speech. Please ensure your browser supports text-to-speech and try again.');
+        // Mobile-friendly error message (only show if not a common mobile quirk)
+        if (error.name !== 'InvalidStateError') {
+            alert('Unable to start speech. Please ensure your browser supports text-to-speech and try again.');
+        }
     }
 }
 
 function stopReadAloud() {
-    if (speechSynthesis && isReading) {
-        speechSynthesis.cancel();
+    if (speechSynthesis) {
+        // Cancel all speech synthesis (important for mobile)
+        if (speechSynthesis.speaking || speechSynthesis.pending) {
+            speechSynthesis.cancel();
+        }
         isReading = false;
     }
     const readAloudBtn = document.getElementById('readAloudBtn');
