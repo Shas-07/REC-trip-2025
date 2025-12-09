@@ -10,71 +10,107 @@ let currentLanguage = 'en';
 
 // Open modal with place content
 function openModal(placeId) {
-    console.log('🔵 Opening modal for place:', placeId);
-    
-    // Find content - try all possible locations
-    let contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
-    let content = null;
-    
-    if (contentData) {
-        content = contentData.querySelector('.place-card-content');
-        console.log('✅ Found content in place-content-data for:', placeId);
-    }
-    
-    // If not found, try visible place-card
-    if (!content) {
-        const placeCard = document.querySelector(`.place-card[data-place="${placeId}"]`);
-        if (placeCard) {
-            content = placeCard.querySelector('.place-card-content');
-            console.log('✅ Found content in place-card for:', placeId);
-        }
-    }
-    
-    if (!content) {
-        console.error('❌ Content not found for place:', placeId);
-        return;
-    }
-    
-    // Store original content and load into modal
-    originalContent = content.innerHTML;
-    modalBody.innerHTML = originalContent;
-    modal.classList.add('active');
-    document.body.style.overflow = 'hidden';
-    modalBody.scrollTop = 0;
-    
-    // Reset to English
-    currentLanguage = 'en';
-    stopReadAloud();
-    
-    console.log('🔄 Initializing features for:', placeId);
-    
-    // Initialize features - use multiple attempts to ensure button is ready
-    // First attempt: immediate (microtask)
-    Promise.resolve().then(() => {
-        console.log('🔧 Attempt 1: Running initReadAloud for:', placeId);
-        initReadAloud();
-        initTranslate();
-        updateTranslateUI();
+    try {
+        console.log('🔵 Opening modal for place:', placeId);
         
-        // Verify button was initialized
-        const btn = document.getElementById('readAloudBtn');
-        if (btn) {
-            console.log('✅ Read Aloud button found and initialized (attempt 1) for:', placeId);
-        } else {
-            console.warn('⚠️ Button not found on attempt 1, retrying...');
-            // Retry after a short delay
-            setTimeout(() => {
-                console.log('🔧 Attempt 2: Retrying initReadAloud for:', placeId);
-                initReadAloud();
-                const btn2 = document.getElementById('readAloudBtn');
-                if (btn2) {
-                    console.log('✅ Read Aloud button found on retry for:', placeId);
-                } else {
-                    console.error('❌ Read Aloud button NOT found after retry for:', placeId);
-                }
-            }, 100);
+        // Find content - try all possible locations
+        let contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
+        let content = null;
+        
+        if (contentData) {
+            content = contentData.querySelector('.place-card-content');
+            console.log('✅ Found content in place-content-data for:', placeId);
+            console.log('📦 Content HTML length:', content ? content.innerHTML.length : 0);
         }
-    });
+        
+        // If not found, try visible place-card
+        if (!content) {
+            const placeCard = document.querySelector(`.place-card[data-place="${placeId}"]`);
+            if (placeCard) {
+                content = placeCard.querySelector('.place-card-content');
+                console.log('✅ Found content in place-card for:', placeId);
+            }
+        }
+        
+        if (!content) {
+            console.error('❌ Content not found for place:', placeId);
+            console.error('🔍 Searched for:', `.place-content-data[data-place="${placeId}"]`);
+            return;
+        }
+        
+        // Store original content and load into modal
+        originalContent = content.innerHTML;
+        
+        // Clear modal body first
+        modalBody.innerHTML = '';
+        
+        // Load content
+        modalBody.innerHTML = originalContent;
+        
+        // Show modal
+        modal.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        modalBody.scrollTop = 0;
+        
+        // Reset to English
+        currentLanguage = 'en';
+        stopReadAloud();
+        
+        console.log('🔄 Initializing features for:', placeId);
+        console.log('📦 Modal body HTML length:', modalBody.innerHTML.length);
+        console.log('🔍 Modal active class:', modal.classList.contains('active'));
+        
+        // CRITICAL: Initialize button handlers - try immediate first, then RAF as fallback
+        // For Kaynes specifically, we'll do both immediate and delayed
+        
+        if (placeId === 'kaynes') {
+            console.log('🔴 KAYNES SPECIAL: Double initialization');
+            // Immediate attempt
+            initReadAloud();
+            initTranslate();
+            updateTranslateUI();
+        }
+        
+        // Use requestAnimationFrame for all places (ensures DOM is painted)
+        requestAnimationFrame(() => {
+            try {
+                initReadAloud();
+                initTranslate();
+                updateTranslateUI();
+                
+                // Verify immediately after RAF
+                const btn = document.getElementById('readAloudBtn');
+                if (btn) {
+                    console.log('✅ Read Aloud button found and initialized for:', placeId);
+                    console.log('🔍 Button position:', btn.getBoundingClientRect());
+                    console.log('🔍 Button z-index:', window.getComputedStyle(btn).zIndex);
+                    
+                    // Add a visual indicator for debugging Kaynes
+                    if (placeId === 'kaynes') {
+                        btn.style.border = '3px solid red'; // Visual debug for Kaynes
+                        btn.style.boxShadow = '0 0 10px red'; // Extra visual indicator
+                        console.log('🔴 KAYNES DEBUG: Button should have red border and glow');
+                        
+                        // Also log button state
+                        console.log('🔴 KAYNES Button onclick:', btn.onclick);
+                        console.log('🔴 KAYNES Button ontouchend:', btn.ontouchend);
+                    }
+                } else {
+                    console.error('❌ Read Aloud button NOT found for:', placeId);
+                    // Emergency retry with delay
+                    setTimeout(() => {
+                        console.log('🆘 Emergency retry: initReadAloud for', placeId);
+                        initReadAloud();
+                    }, 100);
+                }
+            } catch (error) {
+                console.error('❌ Error in RAF callback:', error);
+            }
+        });
+    } catch (error) {
+        console.error('❌ Error in openModal:', error);
+        console.error('❌ Error stack:', error.stack);
+    }
 }
 
 // Close modal
@@ -312,22 +348,36 @@ let touchStarted = false; // Track touch events for mobile
 
 function initReadAloud() {
     console.log('🎤 initReadAloud() called');
-    const readAloudBtn = document.getElementById('readAloudBtn');
+    console.log('🔍 Modal active?', modal.classList.contains('active'));
+    console.log('🔍 Modal body exists?', !!modalBody);
+    
+    // Try multiple ways to find the button
+    let readAloudBtn = document.getElementById('readAloudBtn');
     if (!readAloudBtn) {
-        console.error('❌ Read Aloud button not found by ID');
-        // Try alternative selectors
-        const altBtn = document.querySelector('.read-aloud-btn');
-        if (altBtn) {
+        console.warn('⚠️ Button not found by ID, trying class selector...');
+        readAloudBtn = document.querySelector('.read-aloud-btn');
+        if (readAloudBtn) {
             console.log('✅ Found button by class, assigning ID');
-            altBtn.id = 'readAloudBtn';
-            // Retry initialization
-            return initReadAloud();
+            readAloudBtn.id = 'readAloudBtn';
         }
+    }
+    
+    if (!readAloudBtn) {
         console.error('❌ Read Aloud button not found at all');
+        console.error('🔍 Available buttons in modal:', document.querySelectorAll('.read-aloud-btn, #readAloudBtn').length);
         return;
     }
     
     console.log('✅ Read Aloud button found');
+    console.log('🔍 Button visible?', readAloudBtn.offsetParent !== null);
+    console.log('🔍 Button disabled?', readAloudBtn.disabled);
+    console.log('🔍 Button display:', window.getComputedStyle(readAloudBtn).display);
+    console.log('🔍 Button pointer-events:', window.getComputedStyle(readAloudBtn).pointerEvents);
+    
+    // Ensure button is visible and clickable
+    readAloudBtn.style.display = '';
+    readAloudBtn.style.pointerEvents = 'auto';
+    readAloudBtn.disabled = false;
     
     // Check browser support
     if (!('speechSynthesis' in window)) {
@@ -345,6 +395,7 @@ function initReadAloud() {
     // Remove old listeners by cloning
     const newBtn = readAloudBtn.cloneNode(true);
     newBtn.id = 'readAloudBtn';
+    newBtn.className = readAloudBtn.className; // Preserve classes
     const parent = readAloudBtn.parentNode;
     if (parent) {
         parent.replaceChild(newBtn, readAloudBtn);
@@ -354,11 +405,19 @@ function initReadAloud() {
         return;
     }
     
+    // Ensure new button is also visible
+    newBtn.style.display = '';
+    newBtn.style.pointerEvents = 'auto';
+    newBtn.disabled = false;
+    
     // Handler function - defined once for reuse
     const handleButtonClick = function(e) {
-        console.log('🔘 Button clicked/touched!', e.type);
+        console.log('🔘 Button clicked/touched!', e.type, 'isReading:', isReading);
+        console.log('🔘 Event target:', e.target);
+        console.log('🔘 Current target:', e.currentTarget);
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation(); // Prevent other handlers
         if (isReading) {
             console.log('⏹️ Stopping read aloud');
             stopReadAloud();
@@ -366,17 +425,33 @@ function initReadAloud() {
             console.log('▶️ Starting read aloud');
             startReadAloudDirect(e);
         }
+        return false; // Extra safety
     };
     
-    // Attach both click and touchend handlers
-    // Use addEventListener for better compatibility
-    newBtn.addEventListener('click', handleButtonClick, { passive: false });
-    newBtn.addEventListener('touchend', handleButtonClick, { passive: false });
+    // Attach handlers in multiple ways for maximum compatibility
+    // Method 1: addEventListener (preferred)
+    newBtn.addEventListener('click', handleButtonClick, { passive: false, capture: false });
+    newBtn.addEventListener('touchend', handleButtonClick, { passive: false, capture: false });
     newBtn.addEventListener('touchstart', function(e) {
-        console.log('👆 Touch start detected');
-    }, { passive: true });
+        console.log('👆 Touch start detected on button');
+        // Prevent default to ensure touchend fires
+        e.preventDefault();
+    }, { passive: false });
     
+    // Method 2: Direct onclick (backup for mobile)
+    newBtn.onclick = handleButtonClick;
+    
+    // Method 3: ontouchend (backup)
+    newBtn.ontouchend = handleButtonClick;
+    
+    // Method 4: Direct attribute (some mobile browsers)
+    newBtn.setAttribute('onclick', 'return false;'); // Will be overridden by onclick property
+    
+    // Verify handlers
     console.log('✅ Event listeners attached to button');
+    console.log('🔍 Button onclick handler:', newBtn.onclick ? 'SET' : 'NOT SET');
+    console.log('🔍 Button ontouchend handler:', newBtn.ontouchend ? 'SET' : 'NOT SET');
+    console.log('🔍 Button element:', newBtn);
 }
 
 // Direct start function - called immediately from user gesture (CRITICAL for mobile)
