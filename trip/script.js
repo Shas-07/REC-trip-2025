@@ -60,16 +60,29 @@ function openModal(placeId) {
     
     // Initialize features after DOM update
     // Use requestAnimationFrame for better DOM readiness, especially for mobile
-    // For Kaynes specifically, wait a bit longer to ensure content is fully loaded
-    const isKaynes = normalizedPlaceId === 'kaynes' || placeId.toLowerCase() === 'kaynes';
-    const delay = isKaynes ? 200 : 150;
+    // For first place (Kaynes), wait longer to ensure content is fully loaded
+    const isFirstPlace = normalizedPlaceId === 'kaynes' || placeId.toLowerCase() === 'kaynes';
+    const delay = isFirstPlace ? 250 : 150;
     
+    // Double-check content is loaded before initializing
     requestAnimationFrame(() => {
-        setTimeout(() => {
-            initReadAloud();
-            initTranslate();
-            updateTranslateUI();
-        }, delay);
+        requestAnimationFrame(() => {
+            setTimeout(() => {
+                // Verify modalBody has content before initializing
+                if (modalBody && modalBody.innerHTML && modalBody.innerHTML.trim()) {
+                    initReadAloud();
+                    initTranslate();
+                    updateTranslateUI();
+                } else {
+                    // Retry if content not ready yet
+                    setTimeout(() => {
+                        initReadAloud();
+                        initTranslate();
+                        updateTranslateUI();
+                    }, 100);
+                }
+            }, delay);
+        });
     });
 }
 
@@ -310,7 +323,24 @@ if ('speechSynthesis' in window) {
 }
 
 function initReadAloud() {
-    const readAloudBtn = document.getElementById('readAloudBtn');
+    // Try multiple times to find button - especially important for first modal open
+    let readAloudBtn = document.getElementById('readAloudBtn');
+    
+    // If not found, try again after a short delay (for first modal open)
+    if (!readAloudBtn) {
+        setTimeout(() => {
+            readAloudBtn = document.getElementById('readAloudBtn');
+            if (readAloudBtn) {
+                initializeButtonHandlers(readAloudBtn);
+            }
+        }, 100);
+        return;
+    }
+    
+    initializeButtonHandlers(readAloudBtn);
+}
+
+function initializeButtonHandlers(readAloudBtn) {
     if (!readAloudBtn) {
         return;
     }
@@ -323,6 +353,13 @@ function initReadAloud() {
     if (!speechSynthesis) {
         speechSynthesis = window.speechSynthesis;
     }
+    
+    // Remove any existing event listeners by cloning the button
+    // This ensures we don't have duplicate listeners
+    const newBtn = readAloudBtn.cloneNode(true);
+    newBtn.id = 'readAloudBtn';
+    readAloudBtn.parentNode.replaceChild(newBtn, readAloudBtn);
+    readAloudBtn = document.getElementById('readAloudBtn');
     
     // Ensure button is clickable
     readAloudBtn.style.pointerEvents = 'auto';
@@ -536,6 +573,9 @@ function initReadAloud() {
     // Attach handlers directly - use both click and touch for maximum compatibility
     // Use capture phase to ensure we get the event first
     readAloudBtn.addEventListener('click', handleButtonClick, { passive: false, capture: true });
+    
+    // Also set onclick as backup (critical for first modal open)
+    readAloudBtn.onclick = handleButtonClick;
     
     // For mobile - handle touch events properly
     let touchStarted = false;
