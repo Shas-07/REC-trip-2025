@@ -258,18 +258,30 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
 let speechSynthesis = null;
 let currentUtterance = null;
 let isReading = false;
+let voicesLoaded = false;
+let voices = [];
 
 // Initialize speech synthesis on page load (helps Chrome load voices)
 if ('speechSynthesis' in window) {
     speechSynthesis = window.speechSynthesis;
-    // Force Chrome to load voices by calling getVoices() immediately
-    speechSynthesis.getVoices();
-    // Listen for voices to load
-    if (speechSynthesis.getVoices().length === 0) {
-        speechSynthesis.addEventListener('voiceschanged', () => {
-            speechSynthesis.getVoices();
-        }, { once: true });
-    }
+    
+    // Function to load voices
+    const loadVoices = () => {
+        voices = speechSynthesis.getVoices();
+        if (voices.length > 0) {
+            voicesLoaded = true;
+        }
+    };
+    
+    // Load voices immediately
+    loadVoices();
+    
+    // Chrome mobile needs voiceschanged event
+    speechSynthesis.addEventListener('voiceschanged', loadVoices, { once: false });
+    
+    // Also try loading after a delay for mobile
+    setTimeout(loadVoices, 500);
+    setTimeout(loadVoices, 1000);
 }
 
 function initReadAloud() {
@@ -289,6 +301,8 @@ function initReadAloud() {
     
     // Ensure button is clickable
     readAloudBtn.style.pointerEvents = 'auto';
+    readAloudBtn.style.webkitTouchCallout = 'none';
+    readAloudBtn.style.userSelect = 'none';
     readAloudBtn.disabled = false;
     readAloudBtn.style.cursor = 'pointer';
     
@@ -296,12 +310,15 @@ function initReadAloud() {
     const spans = readAloudBtn.querySelectorAll('span');
     spans.forEach(span => {
         span.style.pointerEvents = 'none';
+        span.style.webkitTouchCallout = 'none';
+        span.style.userSelect = 'none';
     });
     
-    // DIRECT CLICK HANDLER - attach to mic button
-    readAloudBtn.onclick = function(e) {
+    // Unified handler function for both click and touch
+    const handleButtonClick = function(e) {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         
         // Visual feedback IMMEDIATELY
         readAloudBtn.classList.add('active');
@@ -317,10 +334,44 @@ function initReadAloud() {
             speechSynthesis = window.speechSynthesis;
         }
         
-        // Find blog content
-        const blogContent = modalBody?.querySelector('.blog-content') ||
-                           modalBody?.querySelector('.blog-section .blog-content') ||
-                           modalBody?.querySelector('.blog-section');
+        // Ensure voices are loaded (critical for mobile Chrome)
+        if (!voicesLoaded || voices.length === 0) {
+            voices = speechSynthesis.getVoices();
+            voicesLoaded = voices.length > 0;
+        }
+        
+        // If still no voices, get them again synchronously
+        if (voices.length === 0) {
+            voices = speechSynthesis.getVoices();
+        }
+        
+        // Find blog content - try multiple selectors for all places
+        // Check in order: direct .blog-content, nested .blog-content, then .blog-section
+        let blogContent = null;
+        
+        // Try direct .blog-content first (most common)
+        blogContent = modalBody?.querySelector('.blog-content');
+        
+        // If not found, try nested .blog-content within .blog-section
+        if (!blogContent) {
+            blogContent = modalBody?.querySelector('.blog-section .blog-content');
+        }
+        
+        // If still not found, use the entire .blog-section
+        if (!blogContent) {
+            blogContent = modalBody?.querySelector('.blog-section');
+        }
+        
+        // Last resort: look for any content in .place-card-content
+        if (!blogContent && modalBody) {
+            const placeContent = modalBody.querySelector('.place-card-content');
+            if (placeContent) {
+                blogContent = placeContent.querySelector('.blog-content') ||
+                             placeContent.querySelector('.blog-section .blog-content') ||
+                             placeContent.querySelector('.blog-section') ||
+                             placeContent;
+            }
+        }
         
         if (!blogContent) {
             resetButtonState();
@@ -337,10 +388,17 @@ function initReadAloud() {
             return;
         }
         
-        // Cancel existing
-        speechSynthesis.cancel();
+        // Cancel existing - wait a tiny bit for mobile Chrome
+        if (speechSynthesis.speaking || speechSynthesis.pending) {
+            speechSynthesis.cancel();
+            // Small synchronous wait for cancellation
+            let waitCount = 0;
+            while ((speechSynthesis.speaking || speechSynthesis.pending) && waitCount < 10) {
+                waitCount++;
+            }
+        }
         
-        // Create and speak IMMEDIATELY (Chrome requirement)
+        // Create and speak IMMEDIATELY (critical for mobile Chrome)
         try {
             currentUtterance = new SpeechSynthesisUtterance(text);
             currentUtterance.lang = currentLanguage === 'hi' ? 'hi-IN' : currentLanguage === 'kn' ? 'kn-IN' : 'en-US';
@@ -348,10 +406,14 @@ function initReadAloud() {
             currentUtterance.pitch = 1;
             currentUtterance.volume = 1;
             
-            const voices = speechSynthesis.getVoices();
+            // Set voice if available
             if (voices.length > 0) {
-                const voice = voices.find(v => v.lang.startsWith(currentUtterance.lang)) || voices[0];
-                currentUtterance.voice = voice;
+                const voice = voices.find(v => v.lang.startsWith(currentUtterance.lang)) || 
+                             voices.find(v => v.lang.startsWith('en')) || 
+                             voices[0];
+                if (voice) {
+                    currentUtterance.voice = voice;
+                }
             }
             
             isReading = true;
@@ -365,12 +427,13 @@ function initReadAloud() {
                 resetButtonState();
             };
             
-            currentUtterance.onerror = () => {
+            currentUtterance.onerror = (event) => {
                 isReading = false;
                 resetButtonState();
             };
             
-            // SPEAK NOW - must be in click handler
+            // CRITICAL: SPEAK IMMEDIATELY within user gesture context
+            // No delays, no async, must be synchronous for mobile Chrome
             speechSynthesis.speak(currentUtterance);
         } catch (error) {
             isReading = false;
@@ -378,8 +441,38 @@ function initReadAloud() {
         }
     };
     
-    // Also attach for touch devices
-    readAloudBtn.addEventListener('touchend', readAloudBtn.onclick, true);
+    // Attach handlers directly - use both click and touch for maximum compatibility
+    // Use capture phase to ensure we get the event first
+    readAloudBtn.addEventListener('click', handleButtonClick, { passive: false, capture: true });
+    
+    // For mobile - handle touch events properly
+    let touchStarted = false;
+    readAloudBtn.addEventListener('touchstart', function(e) {
+        touchStarted = true;
+        e.preventDefault();
+        e.stopPropagation();
+    }, { passive: false });
+    
+    readAloudBtn.addEventListener('touchend', function(e) {
+        if (touchStarted) {
+            touchStarted = false;
+            e.preventDefault();
+            handleButtonClick(e);
+        }
+    }, { passive: false, capture: true });
+    
+    // Prevent page visibility changes from stopping speech
+    document.addEventListener('visibilitychange', function() {
+        // If page becomes hidden, keep speech playing (don't cancel)
+        // Mobile Chrome sometimes triggers this during scrolling
+    });
+    
+    // Prevent modal scroll from interfering with speech
+    if (modalBody) {
+        modalBody.addEventListener('touchmove', function(e) {
+            // Allow scrolling but don't stop speech
+        }, { passive: true });
+    }
 }
 
 function startReadAloud() {
@@ -413,12 +506,32 @@ function startReadAloudDirect(event) {
         return;
     }
     
-    // Find blog content - try multiple selectors
-    let blogContent = modalBody.querySelector('.blog-content') ||
-                     modalBody.querySelector('.blog-section .blog-content') ||
-                     modalBody.querySelector('.blog-section') ||
-                     modalBody.querySelector('.place-card-content .blog-content') ||
-                     modalBody.querySelector('.place-card-content .blog-section');
+    // Find blog content - try multiple selectors for all places
+    let blogContent = null;
+    
+    // Try direct .blog-content first (most common)
+    blogContent = modalBody.querySelector('.blog-content');
+    
+    // If not found, try nested .blog-content within .blog-section
+    if (!blogContent) {
+        blogContent = modalBody.querySelector('.blog-section .blog-content');
+    }
+    
+    // If still not found, use the entire .blog-section
+    if (!blogContent) {
+        blogContent = modalBody.querySelector('.blog-section');
+    }
+    
+    // Last resort: look for any content in .place-card-content
+    if (!blogContent) {
+        const placeContent = modalBody.querySelector('.place-card-content');
+        if (placeContent) {
+            blogContent = placeContent.querySelector('.blog-content') ||
+                         placeContent.querySelector('.blog-section .blog-content') ||
+                         placeContent.querySelector('.blog-section') ||
+                         placeContent;
+        }
+    }
     
     if (!blogContent) {
         resetButtonState();
@@ -758,10 +871,32 @@ async function translateContent(targetLang) {
         return;
     }
     
-    // Find blog content
-    const blogContent = modalBody.querySelector('.blog-content') ||
-                       modalBody.querySelector('.blog-section .blog-content') ||
-                       modalBody.querySelector('.blog-section');
+    // Find blog content - try multiple selectors for all places
+    let blogContent = null;
+    
+    // Try direct .blog-content first (most common)
+    blogContent = modalBody.querySelector('.blog-content');
+    
+    // If not found, try nested .blog-content within .blog-section
+    if (!blogContent) {
+        blogContent = modalBody.querySelector('.blog-section .blog-content');
+    }
+    
+    // If still not found, use the entire .blog-section
+    if (!blogContent) {
+        blogContent = modalBody.querySelector('.blog-section');
+    }
+    
+    // Last resort: look for any content in .place-card-content
+    if (!blogContent) {
+        const placeContent = modalBody.querySelector('.place-card-content');
+        if (placeContent) {
+            blogContent = placeContent.querySelector('.blog-content') ||
+                         placeContent.querySelector('.blog-section .blog-content') ||
+                         placeContent.querySelector('.blog-section') ||
+                         placeContent;
+        }
+    }
     
     if (!blogContent) {
         return;
@@ -771,12 +906,35 @@ async function translateContent(targetLang) {
     blogContent.innerHTML = '<p style="text-align: center; color: var(--text-secondary); padding: 20px;">Translating content...</p>';
     
     try {
-        // Extract text from original content
+        // Extract text from original content - try multiple selectors
         const tempDiv = document.createElement('div');
         tempDiv.innerHTML = originalContent;
-        const originalBlogContent = tempDiv.querySelector('.blog-content') ||
-                                   tempDiv.querySelector('.blog-section .blog-content') ||
-                                   tempDiv.querySelector('.blog-section');
+        
+        let originalBlogContent = null;
+        
+        // Try direct .blog-content first
+        originalBlogContent = tempDiv.querySelector('.blog-content');
+        
+        // If not found, try nested .blog-content within .blog-section
+        if (!originalBlogContent) {
+            originalBlogContent = tempDiv.querySelector('.blog-section .blog-content');
+        }
+        
+        // If still not found, use the entire .blog-section
+        if (!originalBlogContent) {
+            originalBlogContent = tempDiv.querySelector('.blog-section');
+        }
+        
+        // Last resort: look for any content in .place-card-content
+        if (!originalBlogContent) {
+            const placeContent = tempDiv.querySelector('.place-card-content');
+            if (placeContent) {
+                originalBlogContent = placeContent.querySelector('.blog-content') ||
+                                    placeContent.querySelector('.blog-section .blog-content') ||
+                                    placeContent.querySelector('.blog-section') ||
+                                    placeContent;
+            }
+        }
         
         if (!originalBlogContent) {
             modalBody.innerHTML = originalContent;
