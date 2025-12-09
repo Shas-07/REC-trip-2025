@@ -357,7 +357,12 @@ function initReadAloud() {
 
 // Separate handler function that does the actual work
 function handleReadAloudClick(event) {
-    console.log('🔊 Read Aloud button clicked!', { isReading, hasEvent: !!event });
+    console.log('🔊 Read Aloud button clicked!', { 
+        isReading, 
+        hasEvent: !!event,
+        modalBody: !!modalBody,
+        modalBodyContent: modalBody ? modalBody.innerHTML.length : 0
+    });
     
     if (event) {
         event.preventDefault();
@@ -369,10 +374,34 @@ function handleReadAloudClick(event) {
         stopReadAloud();
     } else {
         console.log('Starting read aloud...');
-        // CRITICAL FOR MOBILE: Call startReadAloud IMMEDIATELY and SYNCHRONOUSLY
-        // This MUST be called directly from the user gesture handler
-        // No setTimeout, no requestAnimationFrame, no async operations
-        startReadAloud(event);
+        
+        // Update button state IMMEDIATELY to show it's working
+        const readAloudBtn = document.getElementById('readAloudBtn');
+        if (readAloudBtn) {
+            readAloudBtn.classList.add('active');
+            const spans = readAloudBtn.querySelectorAll('span');
+            if (spans.length > 1) {
+                spans[1].textContent = 'Starting...';
+            }
+        }
+        
+        try {
+            // CRITICAL FOR MOBILE: Call startReadAloud IMMEDIATELY and SYNCHRONOUSLY
+            // This MUST be called directly from the user gesture handler
+            // No setTimeout, no requestAnimationFrame, no async operations
+            startReadAloud(event);
+        } catch (error) {
+            console.error('❌ Error in handleReadAloudClick:', error);
+            // Reset button state on error
+            if (readAloudBtn) {
+                readAloudBtn.classList.remove('active');
+                const spans = readAloudBtn.querySelectorAll('span');
+                if (spans.length > 1) {
+                    spans[1].textContent = 'Read Aloud';
+                }
+            }
+            alert('Error starting read aloud: ' + error.message);
+        }
     }
 }
 
@@ -382,10 +411,20 @@ function toggleReadAloud(event) {
 }
 
 function startReadAloud(event) {
+    console.log('startReadAloud called', {
+        hasEvent: !!event,
+        protocol: location.protocol,
+        hostname: location.hostname,
+        hasSpeechSynthesis: 'speechSynthesis' in window,
+        hasModalBody: !!modalBody,
+        modalBodyContentLength: modalBody ? modalBody.innerHTML.length : 0
+    });
+    
     // Check if we're on HTTPS (required for speech synthesis on mobile)
     if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
         console.warn('Speech synthesis requires HTTPS on mobile devices');
         alert('Text-to-speech requires a secure connection (HTTPS). Please access this site via HTTPS.');
+        resetButtonState();
         return;
     }
     
@@ -393,23 +432,33 @@ function startReadAloud(event) {
     if (!speechSynthesis) {
         if ('speechSynthesis' in window) {
             speechSynthesis = window.speechSynthesis;
+            console.log('✓ Speech synthesis initialized');
         } else {
             console.warn('Speech synthesis not available');
             alert('Text-to-speech is not supported in your browser.');
+            resetButtonState();
             return;
         }
     }
     
     if (!modalBody) {
-        console.warn('Modal body not available');
+        console.error('❌ Modal body not available');
+        alert('Modal content not found. Please try closing and reopening the modal.');
+        resetButtonState();
         return;
     }
     
     // Ensure modal is visible and content is loaded
     if (!modalBody.innerHTML || !modalBody.innerHTML.trim()) {
-        console.warn('Modal body has no content');
+        console.error('❌ Modal body has no content');
+        console.log('Modal body:', modalBody);
+        console.log('Modal body innerHTML length:', modalBody.innerHTML ? modalBody.innerHTML.length : 0);
+        alert('No content found in modal. Please try closing and reopening.');
+        resetButtonState();
         return;
     }
+    
+    console.log('✓ All basic checks passed, proceeding to find blog content...');
     
     // Try multiple selectors to find blog content - more comprehensive approach
     let blogContent = null;
@@ -456,13 +505,18 @@ function startReadAloud(event) {
     }
     
     if (!blogContent) {
-        console.error('Blog content not found in modal');
-        console.log('Modal body HTML:', modalBody.innerHTML.substring(0, 500));
+        console.error('❌ Blog content not found in modal');
+        console.log('Modal body HTML (first 1000 chars):', modalBody.innerHTML.substring(0, 1000));
         console.log('Available elements in modal:', {
             blogSection: modalBody.querySelector('.blog-section') ? 'found' : 'not found',
             placeCardContent: modalBody.querySelector('.place-card-content') ? 'found' : 'not found',
-            totalChildren: modalBody.children.length
+            blogContent: modalBody.querySelector('.blog-content') ? 'found' : 'not found',
+            totalChildren: modalBody.children.length,
+            firstChildTag: modalBody.firstElementChild ? modalBody.firstElementChild.tagName : 'none',
+            firstChildClass: modalBody.firstElementChild ? modalBody.firstElementChild.className : 'none'
         });
+        alert('Could not find content to read. Please try closing and reopening the modal.');
+        resetButtonState();
         return;
     }
     
@@ -555,9 +609,13 @@ function startReadAloud(event) {
             console.log('Found first <p> tag, trying to extract from it');
             text = firstP.innerText || firstP.textContent || '';
             text = text.trim();
+            console.log('Extracted from first <p>, length:', text.length);
         }
         
         if (!text || text.length < 10) {
+            console.error('❌ Still no text found after all attempts');
+            alert('Could not extract text content. The content may be empty or not properly loaded.');
+            resetButtonState();
             return;
         }
     }
@@ -710,6 +768,11 @@ function stopReadAloud() {
         }
         isReading = false;
     }
+    resetButtonState();
+}
+
+// Helper function to reset button state
+function resetButtonState() {
     const readAloudBtn = document.getElementById('readAloudBtn');
     if (readAloudBtn) {
         readAloudBtn.classList.remove('active');
@@ -718,6 +781,7 @@ function stopReadAloud() {
             spans[1].textContent = 'Read Aloud';
         }
     }
+    isReading = false;
 }
 
 // Translate functionality
