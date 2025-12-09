@@ -40,21 +40,24 @@ function openModal(placeId) {
         stopReadAloud();
         
         // Initialize features when modal opens - ensure content is loaded
-        setTimeout(() => {
+        // Use requestAnimationFrame for better timing on mobile
+        requestAnimationFrame(() => {
             // Double check content is loaded
             if (modalBody.innerHTML && modalBody.innerHTML.trim()) {
                 initReadAloud();
                 initTranslate();
                 updateTranslateUI();
             } else {
-                // Retry if content not ready
+                // Retry if content not ready - but use shorter timeout
                 setTimeout(() => {
-                    initReadAloud();
-                    initTranslate();
-                    updateTranslateUI();
-                }, 100);
+                    if (modalBody.innerHTML && modalBody.innerHTML.trim()) {
+                        initReadAloud();
+                        initTranslate();
+                        updateTranslateUI();
+                    }
+                }, 50);
             }
-        }, 100);
+        });
     }
 }
 
@@ -298,64 +301,83 @@ function initReadAloud() {
         return;
     }
     
-    // Remove existing event listeners by cloning
+    // Check if browser supports speech synthesis
+    if (!('speechSynthesis' in window)) {
+        readAloudBtn.style.display = 'none';
+        console.warn('Speech synthesis not supported in this browser');
+        return;
+    }
+    
+    // Initialize speech synthesis
+    if (!speechSynthesis) {
+        speechSynthesis = window.speechSynthesis;
+    }
+    
+    // Remove existing event listeners by cloning (prevents duplicate handlers)
     const newBtn = readAloudBtn.cloneNode(true);
-    // Ensure ID is preserved
     newBtn.id = 'readAloudBtn';
     readAloudBtn.parentNode.replaceChild(newBtn, readAloudBtn);
     
-    // Check if browser supports speech synthesis
-    if ('speechSynthesis' in window) {
-        speechSynthesis = window.speechSynthesis;
-        
-        // Mobile-friendly touch handling
-        // Handle touch start to track user interaction
-        newBtn.addEventListener('touchstart', function(e) {
-            touchStarted = true;
-        }, { passive: true });
-        
-        // Handle touch end - critical for mobile browsers
-        newBtn.addEventListener('touchend', function(e) {
-            if (touchStarted) {
-                e.preventDefault();
-                e.stopPropagation();
-                toggleReadAloud(e);
-                // Reset after a short delay to allow click to be ignored
-                setTimeout(() => {
-                    touchStarted = false;
-                }, 300);
-            }
-        }, { passive: false });
-        
-        // Handle click for desktop and as fallback
-        newBtn.addEventListener('click', function(e) {
-            // Only handle if not from touch (to avoid double-firing)
-            if (!touchStarted) {
-                toggleReadAloud(e);
-            }
-        });
-        
-        console.log('Read Aloud initialized successfully (mobile-ready)');
-    } else {
-        newBtn.style.display = 'none';
-        console.warn('Speech synthesis not supported in this browser');
-    }
+    // CRITICAL: Attach handlers directly - no delays, no async
+    // This ensures the user gesture chain is maintained
+    
+    // Track touch for mobile
+    let isTouchEvent = false;
+    
+    // Touch start handler
+    newBtn.addEventListener('touchstart', function(e) {
+        isTouchEvent = true;
+        touchStarted = true;
+    }, { passive: true, once: false });
+    
+    // Touch end handler - PRIMARY for mobile
+    newBtn.addEventListener('touchend', function(e) {
+        if (isTouchEvent) {
+            e.preventDefault();
+            e.stopPropagation();
+            isTouchEvent = false;
+            // Call directly - maintains gesture chain
+            handleReadAloudClick(e);
+            // Reset touch flag after a delay
+            setTimeout(() => {
+                touchStarted = false;
+            }, 500);
+        }
+    }, { passive: false, once: false });
+    
+    // Click handler - for desktop and fallback
+    newBtn.addEventListener('click', function(e) {
+        // Skip if this was a touch event (already handled)
+        if (!touchStarted) {
+            handleReadAloudClick(e);
+        }
+    }, { once: false });
+    
+    console.log('Read Aloud button initialized successfully');
 }
 
-function toggleReadAloud(event) {
-    // Prevent any default behavior
+// Separate handler function that does the actual work
+function handleReadAloudClick(event) {
+    console.log('🔊 Read Aloud button clicked!', { isReading, hasEvent: !!event });
+    
     if (event) {
         event.preventDefault();
         event.stopPropagation();
     }
     
     if (isReading) {
+        console.log('Stopping read aloud...');
         stopReadAloud();
     } else {
-        // CRITICAL FOR MOBILE: Call startReadAloud directly from user gesture
-        // This ensures the user gesture chain is maintained for speech synthesis
+        console.log('Starting read aloud...');
+        // Call startReadAloud directly - this maintains the user gesture
         startReadAloud(event);
     }
+}
+
+// This function is kept for backwards compatibility but handleReadAloudClick is preferred
+function toggleReadAloud(event) {
+    handleReadAloudClick(event);
 }
 
 function startReadAloud(event) {
@@ -441,57 +463,91 @@ function startReadAloud(event) {
     // Get all text content from blog - use innerText for better results
     // innerText is preferred as it excludes hidden elements and respects styling
     let text = '';
+    
+    // Try multiple methods to extract text - be very thorough
     try {
-        // Prefer innerText (excludes script/style, respects CSS visibility)
-        if (blogContent.innerText) {
+        // Method 1: innerText (best, respects CSS)
+        if (blogContent.innerText && blogContent.innerText.trim().length > 0) {
             text = blogContent.innerText;
-            console.log('Using innerText, length:', text.length);
-        } else if (blogContent.textContent) {
+            console.log('✓ Using innerText, length:', text.length);
+        } 
+        // Method 2: textContent (fallback)
+        else if (blogContent.textContent && blogContent.textContent.trim().length > 0) {
             text = blogContent.textContent;
-            console.log('Using textContent, length:', text.length);
-        } else {
-            // Fallback: manually extract text from all child nodes
+            console.log('✓ Using textContent, length:', text.length);
+        } 
+        // Method 3: Manual extraction via TreeWalker
+        else {
             const walker = document.createTreeWalker(
                 blogContent,
                 NodeFilter.SHOW_TEXT,
-                null,
+                {
+                    acceptNode: function(node) {
+                        // Skip script and style nodes
+                        const parent = node.parentElement;
+                        if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                },
                 false
             );
             const textNodes = [];
             let node;
             while (node = walker.nextNode()) {
-                if (node.textContent.trim()) {
-                    textNodes.push(node.textContent.trim());
+                const trimmed = node.textContent.trim();
+                if (trimmed.length > 0) {
+                    textNodes.push(trimmed);
                 }
             }
             text = textNodes.join(' ');
-            console.log('Using TreeWalker, extracted nodes:', textNodes.length);
+            console.log('✓ Using TreeWalker, extracted', textNodes.length, 'text nodes');
         }
     } catch (e) {
         console.error('Error extracting text:', e);
-        // Last resort: get textContent from the element directly
+        // Last resort: direct textContent
         text = blogContent.textContent || '';
-        console.log('Using fallback textContent, length:', text.length);
+        console.log('Using emergency fallback, length:', text.length);
     }
     
-    // Clean up the text - remove extra whitespace and normalize
-    // Also filter out problematic characters for mobile speech synthesis
-    text = text
-        .replace(/\s+/g, ' ')  // Normalize whitespace
-        .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
-        .trim();
+    // Clean up the text - normalize whitespace
+    if (text) {
+        text = text
+            .replace(/\s+/g, ' ')  // Normalize all whitespace to single spaces
+            .replace(/[\u200B-\u200D\uFEFF]/g, '') // Remove zero-width characters
+            .replace(/\n+/g, ' ')  // Replace newlines with spaces
+            .replace(/\r+/g, ' ')  // Replace carriage returns
+            .trim();
+    }
     
+    // Validate we have sufficient text
     if (!text || text.length < 10) {
-        console.warn('No text content found in blog or text too short');
-        console.log('Extracted text length:', text.length);
-        console.log('Text preview:', text.substring(0, 100));
-        console.log('Blog content element:', blogContent);
-        console.log('Blog content innerHTML length:', blogContent.innerHTML ? blogContent.innerHTML.length : 0);
-        return;
+        console.error('❌ Text extraction failed or text too short');
+        console.error('Text length:', text ? text.length : 0);
+        console.error('Text preview:', text ? text.substring(0, 100) : '(empty)');
+        console.error('Blog content element:', blogContent);
+        console.error('Blog content tagName:', blogContent.tagName);
+        console.error('Blog content className:', blogContent.className);
+        console.error('Blog content children count:', blogContent.children ? blogContent.children.length : 0);
+        console.error('Blog content innerHTML exists:', !!blogContent.innerHTML);
+        console.error('Blog content innerHTML length:', blogContent.innerHTML ? blogContent.innerHTML.length : 0);
+        
+        // Try one more thing - maybe the content is in a child element
+        const firstP = blogContent.querySelector('p');
+        if (firstP) {
+            console.log('Found first <p> tag, trying to extract from it');
+            text = firstP.innerText || firstP.textContent || '';
+            text = text.trim();
+        }
+        
+        if (!text || text.length < 10) {
+            return;
+        }
     }
     
-    console.log('✓ Starting read aloud with text length:', text.length);
-    console.log('Text preview (first 200 chars):', text.substring(0, 200));
+    console.log('✓ Text extraction successful! Length:', text.length);
+    console.log('Text preview (first 300 chars):', text.substring(0, 300));
     
     // Stop any existing speech - IMPORTANT for mobile browsers
     // Cancel immediately without delay to maintain user gesture chain
@@ -558,18 +614,29 @@ function startReadAloud(event) {
     // This function MUST be called directly from the button click/touch event
     // DO NOT use setTimeout, requestAnimationFrame, or any async operations here
     try {
+        console.log('Attempting to start speech synthesis...');
+        console.log('Speech synthesis state:', {
+            speaking: speechSynthesis.speaking,
+            pending: speechSynthesis.pending,
+            paused: speechSynthesis.paused
+        });
+        
         // Cancel any pending/speaking speech first
         if (speechSynthesis.speaking || speechSynthesis.pending) {
+            console.log('Cancelling existing speech...');
             speechSynthesis.cancel();
-            // Wait synchronously for cancel to process (microtask)
-            // We can't use setTimeout as it breaks gesture chain, so we rely on browser
-            // Most mobile browsers handle cancel() synchronously anyway
         }
         
         // CRITICAL: Call speak() synchronously within the user gesture handler
         // This MUST happen immediately, no delays, no async operations
+        console.log('Calling speechSynthesis.speak()...');
         speechSynthesis.speak(currentUtterance);
-        console.log('Speech started successfully - utterance queued');
+        console.log('✓ speechSynthesis.speak() called successfully');
+        console.log('Speech synthesis state after speak():', {
+            speaking: speechSynthesis.speaking,
+            pending: speechSynthesis.pending,
+            paused: speechSynthesis.paused
+        });
         
     } catch (error) {
         console.error('Error starting speech synthesis:', error);
