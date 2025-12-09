@@ -1,15 +1,8 @@
 // Modal functionality
-console.log('📄 Script.js loaded');
 const modal = document.getElementById('detailModal');
 const modalBody = document.getElementById('modalBody');
 const modalClose = document.querySelector('.modal-close');
 const modalOverlay = document.querySelector('.modal-overlay');
-console.log('Modal elements found:', {
-    modal: !!modal,
-    modalBody: !!modalBody,
-    modalClose: !!modalClose,
-    modalOverlay: !!modalOverlay
-});
 
 // Store original content for translation
 let originalContent = '';
@@ -17,7 +10,6 @@ let currentLanguage = 'en';
 
 // Open modal with place content
 function openModal(placeId) {
-    console.log('📂 openModal called with placeId:', placeId);
     // Find content
     let contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
     let content = null;
@@ -34,7 +26,6 @@ function openModal(placeId) {
     }
     
     if (!content) {
-        console.error('Content not found for placeId:', placeId);
         return;
     }
     
@@ -45,19 +36,16 @@ function openModal(placeId) {
     document.body.style.overflow = 'hidden';
     modalBody.scrollTop = 0;
     
-    console.log('Modal opened, content loaded. Content length:', originalContent.length);
-    
     // Reset state
     currentLanguage = 'en';
     stopReadAloud();
     
     // Initialize features after DOM update
-    requestAnimationFrame(() => {
-        console.log('Initializing features after modal open...');
+    setTimeout(() => {
         initReadAloud();
         initTranslate();
         updateTranslateUI();
-    });
+    }, 100);
 }
 
 // Close modal
@@ -274,26 +262,23 @@ let isReading = false;
 // Initialize speech synthesis on page load (helps Chrome load voices)
 if ('speechSynthesis' in window) {
     speechSynthesis = window.speechSynthesis;
-    // Load voices immediately
+    // Force Chrome to load voices by calling getVoices() immediately
+    speechSynthesis.getVoices();
+    // Listen for voices to load
     if (speechSynthesis.getVoices().length === 0) {
         speechSynthesis.addEventListener('voiceschanged', () => {
-            console.log('Voices loaded:', speechSynthesis.getVoices().length);
+            speechSynthesis.getVoices();
         }, { once: true });
     }
 }
 
 function initReadAloud() {
-    console.log('🔊 initReadAloud() called');
     const readAloudBtn = document.getElementById('readAloudBtn');
     if (!readAloudBtn) {
-        console.error('Read aloud button not found!');
         return;
     }
     
-    console.log('Read aloud button found:', readAloudBtn);
-    
     if (!('speechSynthesis' in window)) {
-        console.warn('Speech synthesis not supported');
         readAloudBtn.style.display = 'none';
         return;
     }
@@ -302,133 +287,99 @@ function initReadAloud() {
         speechSynthesis = window.speechSynthesis;
     }
     
-    // Remove old listeners by cloning
-    const newBtn = readAloudBtn.cloneNode(true);
-    newBtn.id = 'readAloudBtn';
-    newBtn.className = readAloudBtn.className;
-    const parent = readAloudBtn.parentNode;
-    if (parent) {
-        parent.replaceChild(newBtn, readAloudBtn);
-        console.log('Button cloned and replaced');
-    } else {
-        console.error('Button parent not found!');
-        return;
-    }
-    
     // Ensure button is clickable
-    newBtn.style.pointerEvents = 'auto';
-    newBtn.disabled = false;
+    readAloudBtn.style.pointerEvents = 'auto';
+    readAloudBtn.disabled = false;
+    readAloudBtn.style.cursor = 'pointer';
     
     // Make child elements non-interactive so clicks go to button
-    const spans = newBtn.querySelectorAll('span');
+    const spans = readAloudBtn.querySelectorAll('span');
     spans.forEach(span => {
         span.style.pointerEvents = 'none';
     });
     
-    // Handler function
-    const handleClick = function(e) {
-        console.log('🔊 Read Aloud button clicked!', e);
+    // DIRECT CLICK HANDLER - attach to mic button
+    readAloudBtn.onclick = function(e) {
         e.preventDefault();
         e.stopPropagation();
         
+        // Visual feedback IMMEDIATELY
+        readAloudBtn.classList.add('active');
+        const btnSpans = readAloudBtn.querySelectorAll('span');
+        if (btnSpans.length > 1) btnSpans[1].textContent = 'Stop Reading';
+        
         if (isReading) {
-            console.log('Stopping speech...');
             stopReadAloud();
-        } else {
-            console.log('Starting speech...');
-            // Start reading immediately to maintain user gesture context for Chrome
-            if (!speechSynthesis) {
-                if ('speechSynthesis' in window) {
-                    speechSynthesis = window.speechSynthesis;
-                    console.log('Speech synthesis initialized');
-                } else {
-                    console.error('Speech synthesis is not supported in this browser.');
-                    resetButtonState();
-                    return;
-                }
+            return;
+        }
+        
+        if (!speechSynthesis && 'speechSynthesis' in window) {
+            speechSynthesis = window.speechSynthesis;
+        }
+        
+        // Find blog content
+        const blogContent = modalBody?.querySelector('.blog-content') ||
+                           modalBody?.querySelector('.blog-section .blog-content') ||
+                           modalBody?.querySelector('.blog-section');
+        
+        if (!blogContent) {
+            resetButtonState();
+            return;
+        }
+        
+        // Get text - only blog content
+        let text = blogContent.textContent || blogContent.innerText || '';
+        text = text.replace(/\s+/g, ' ').trim();
+        text = text.replace(/Read Aloud|Stop Reading|Translate|View on Google Maps/gi, '').trim();
+        
+        if (!text || text.length < 10) {
+            resetButtonState();
+            return;
+        }
+        
+        // Cancel existing
+        speechSynthesis.cancel();
+        
+        // Create and speak IMMEDIATELY (Chrome requirement)
+        try {
+            currentUtterance = new SpeechSynthesisUtterance(text);
+            currentUtterance.lang = currentLanguage === 'hi' ? 'hi-IN' : currentLanguage === 'kn' ? 'kn-IN' : 'en-US';
+            currentUtterance.rate = 0.9;
+            currentUtterance.pitch = 1;
+            currentUtterance.volume = 1;
+            
+            const voices = speechSynthesis.getVoices();
+            if (voices.length > 0) {
+                const voice = voices.find(v => v.lang.startsWith(currentUtterance.lang)) || voices[0];
+                currentUtterance.voice = voice;
             }
             
-            // Get text immediately
-            console.log('Looking for blog content in modalBody...');
-            let blogContent = modalBody ? (
-                modalBody.querySelector('.blog-content') ||
-                modalBody.querySelector('.blog-section .blog-content') ||
-                modalBody.querySelector('.blog-section') ||
-                modalBody.querySelector('.place-card-content .blog-content') ||
-                modalBody.querySelector('.place-card-content .blog-section')
-            ) : null;
+            isReading = true;
             
-            console.log('Blog content found:', !!blogContent);
+            currentUtterance.onstart = () => {
+                isReading = true;
+            };
             
-            if (!blogContent) {
-                console.error('Blog content not found. Modal body:', modalBody);
-                console.error('Modal body innerHTML length:', modalBody ? modalBody.innerHTML.length : 0);
+            currentUtterance.onend = () => {
+                isReading = false;
                 resetButtonState();
-                return;
-            }
+            };
             
-            let text = blogContent.textContent || blogContent.innerText || '';
-            text = text.replace(/\s+/g, ' ').trim().replace(/[\r\n]+/g, ' ');
-            
-            console.log('Extracted text length:', text.length);
-            
-            if (!text || text.length < 10) {
-                console.error('No readable text found. Text:', text.substring(0, 50));
+            currentUtterance.onerror = () => {
+                isReading = false;
                 resetButtonState();
-                return;
-            }
+            };
             
-            // Update button
-            const btn = document.getElementById('readAloudBtn');
-            if (btn) {
-                btn.classList.add('active');
-                const spans = btn.querySelectorAll('span');
-                if (spans.length > 1) {
-                    spans[1].textContent = 'Stop Reading';
-                }
-            }
-            
-            // Cancel any existing speech
-            if (speechSynthesis.speaking || speechSynthesis.pending) {
-                console.log('Canceling existing speech');
-                speechSynthesis.cancel();
-            }
-            
-            // For Chrome: Create and speak directly in the click handler
-            // This maintains the user gesture context
-            try {
-                // Get voices
-                let voices = speechSynthesis.getVoices();
-                if (voices.length === 0) {
-                    // Voices not loaded yet, wait for them
-                    speechSynthesis.addEventListener('voiceschanged', function onVoicesChanged() {
-                        speechSynthesis.removeEventListener('voiceschanged', onVoicesChanged);
-                        voices = speechSynthesis.getVoices();
-                        if (voices.length > 0) {
-                            startSpeaking(text, voices);
-                        }
-                    }, { once: true });
-                } else {
-                    startSpeaking(text, voices);
-                }
-            } catch (error) {
-                console.error('Error in click handler:', error);
-                resetButtonState();
-            }
+            // SPEAK NOW - must be in click handler
+            speechSynthesis.speak(currentUtterance);
+        } catch (error) {
+            isReading = false;
+            resetButtonState();
         }
     };
     
-    // Attach event listeners
-    console.log('Attaching event listeners to read aloud button');
-    newBtn.addEventListener('click', handleClick, false);
-    newBtn.addEventListener('touchend', handleClick, false);
-    newBtn.onclick = handleClick;
-    newBtn.ontouchend = handleClick;
-    
-    // Test if button is clickable
-    console.log('Read aloud button initialized. Button:', newBtn);
-    console.log('Button disabled:', newBtn.disabled);
-    console.log('Button style pointerEvents:', newBtn.style.pointerEvents);
+    // Also attach for touch devices
+    readAloudBtn.addEventListener('touchend', readAloudBtn.onclick, true);
 }
 
 function startReadAloud() {
@@ -451,7 +402,6 @@ function startReadAloudDirect(event) {
         if ('speechSynthesis' in window) {
             speechSynthesis = window.speechSynthesis;
         } else {
-            console.warn('Speech synthesis is not supported in this browser.');
             resetButtonState();
             return;
         }
@@ -459,7 +409,6 @@ function startReadAloudDirect(event) {
     
     // Check modal body
     if (!modalBody || !modalBody.innerHTML || !modalBody.innerHTML.trim()) {
-        console.warn('No content found to read.');
         resetButtonState();
         return;
     }
@@ -472,7 +421,6 @@ function startReadAloudDirect(event) {
                      modalBody.querySelector('.place-card-content .blog-section');
     
     if (!blogContent) {
-        console.warn('Blog content not found in the page.');
         resetButtonState();
         return;
     }
@@ -485,7 +433,6 @@ function startReadAloudDirect(event) {
     text = text.replace(/[\r\n]+/g, ' '); // Remove newlines
     
     if (!text || text.length < 10) {
-        console.warn('No readable text found.');
         resetButtonState();
         return;
     }
@@ -512,8 +459,6 @@ function startReadAloudDirect(event) {
 // Helper function to start speaking (called from user gesture context)
 function startSpeaking(text, voices) {
     try {
-        console.log('startSpeaking called, text length:', text.length, 'voices:', voices.length);
-        
         // Create utterance
         currentUtterance = new SpeechSynthesisUtterance(text);
         
@@ -535,7 +480,6 @@ function startSpeaking(text, voices) {
                        voices[0];
             if (voice) {
                 currentUtterance.voice = voice;
-                console.log('Using voice:', voice.name);
             }
         }
         
@@ -547,28 +491,23 @@ function startSpeaking(text, voices) {
         
         // Event handlers
         currentUtterance.onstart = () => {
-            console.log('✓ Speech started successfully');
+            isReading = true;
         };
         
         currentUtterance.onend = () => {
-            console.log('✓ Speech ended');
             isReading = false;
             resetButtonState();
         };
         
-        currentUtterance.onerror = (event) => {
-            console.error('✗ Speech error:', event.error, event);
+        currentUtterance.onerror = () => {
             isReading = false;
             resetButtonState();
         };
         
         // Speak immediately (must be in user gesture context)
-        console.log('Calling speechSynthesis.speak() NOW...');
         speechSynthesis.speak(currentUtterance);
-        console.log('After speak() - speaking:', speechSynthesis.speaking, 'pending:', speechSynthesis.pending);
         
     } catch (error) {
-        console.error('Exception in startSpeaking:', error);
         isReading = false;
         resetButtonState();
     }
@@ -576,14 +515,11 @@ function startSpeaking(text, voices) {
 
 function speakTextDirectly(text) {
     try {
-        console.log('speakTextDirectly called with text length:', text.length);
-        
         // Ensure we have speech synthesis
         if (!speechSynthesis) {
             if ('speechSynthesis' in window) {
                 speechSynthesis = window.speechSynthesis;
             } else {
-                console.error('Speech synthesis is not supported in this browser.');
                 resetButtonState();
                 return;
             }
@@ -591,14 +527,11 @@ function speakTextDirectly(text) {
         
         // Get voices first (Chrome needs this)
         let voices = speechSynthesis.getVoices();
-        console.log('Available voices:', voices.length);
         
         // If no voices, wait for them to load
         if (voices.length === 0) {
-            console.log('Waiting for voices to load...');
             speechSynthesis.addEventListener('voiceschanged', () => {
                 voices = speechSynthesis.getVoices();
-                console.log('Voices loaded:', voices.length);
                 if (voices.length > 0) {
                     speakTextDirectly(text);
                 }
@@ -608,7 +541,6 @@ function speakTextDirectly(text) {
         
         // Cancel any pending speech first
         if (speechSynthesis.speaking || speechSynthesis.pending) {
-            console.log('Canceling existing speech');
             speechSynthesis.cancel();
             // Wait a tiny bit for cancellation
             let wait = 0;
@@ -619,7 +551,6 @@ function speakTextDirectly(text) {
         
         // Create utterance
         currentUtterance = new SpeechSynthesisUtterance(text);
-        console.log('Created utterance, text length:', text.length);
         
         // Set language
         if (currentLanguage === 'en') {
@@ -636,7 +567,6 @@ function speakTextDirectly(text) {
         let voice = voices.find(v => v.lang.startsWith(currentUtterance.lang)) || voices.find(v => v.lang.startsWith('en')) || voices[0];
         if (voice) {
             currentUtterance.voice = voice;
-            console.log('Using voice:', voice.name);
         }
         
         currentUtterance.rate = 0.9;
@@ -644,49 +574,26 @@ function speakTextDirectly(text) {
         currentUtterance.volume = 1;
         
         isReading = true;
-        let speechStarted = false;
         
         // Event handlers
         currentUtterance.onstart = () => {
-            console.log('✓ Speech started successfully');
-            speechStarted = true;
+            isReading = true;
         };
         
         currentUtterance.onend = () => {
-            console.log('✓ Speech ended');
             isReading = false;
             resetButtonState();
         };
         
-        currentUtterance.onerror = (event) => {
-            console.error('✗ Speech error:', event);
-            console.error('Error type:', event.error);
-            console.error('Error char index:', event.charIndex);
+        currentUtterance.onerror = () => {
             isReading = false;
             resetButtonState();
         };
         
         // Speak immediately (must be in user gesture context)
-        console.log('Calling speechSynthesis.speak()...');
         speechSynthesis.speak(currentUtterance);
-        console.log('speak() called, speaking:', speechSynthesis.speaking, 'pending:', speechSynthesis.pending);
-        
-        // Verify it started after a short delay
-        setTimeout(() => {
-            if (!speechStarted && !speechSynthesis.speaking && !speechSynthesis.pending && isReading) {
-                console.warn('Speech did not start - attempting retry');
-                // Retry once
-                if (currentUtterance) {
-                    speechSynthesis.cancel();
-                    setTimeout(() => {
-                        speechSynthesis.speak(currentUtterance);
-                    }, 50);
-                }
-            }
-        }, 200);
         
     } catch (error) {
-        console.error('Exception in speakTextDirectly:', error);
         isReading = false;
         resetButtonState();
     }
@@ -726,42 +633,25 @@ function speakText(text) {
         
         // Event handlers
         currentUtterance.onstart = () => {
-            console.log('Speech started');
+            isReading = true;
         };
         
         currentUtterance.onend = () => {
-            console.log('Speech ended');
             isReading = false;
             resetButtonState();
         };
         
-        currentUtterance.onerror = (event) => {
-            console.error('Speech error:', event);
-            console.error('Error type:', event.error);
-            console.error('Error message:', event.message);
+        currentUtterance.onerror = () => {
             isReading = false;
             resetButtonState();
-            // Errors are logged to console only, no popup alerts
         };
         
         // Speak immediately (must be called from user gesture context)
         speechSynthesis.speak(currentUtterance);
         
-        // Verify it actually started (Chrome sometimes silently fails)
-        setTimeout(() => {
-            if (!speechSynthesis.speaking && !speechSynthesis.pending && isReading) {
-                console.warn('Speech did not start, may need user gesture');
-                isReading = false;
-                resetButtonState();
-                // No alert, just log to console
-            }
-        }, 500);
-        
     } catch (error) {
-        console.error('Error calling speak:', error);
         isReading = false;
         resetButtonState();
-        // Errors are logged to console only, no popup alerts
     }
 }
 
@@ -940,7 +830,7 @@ async function translateContent(targetLang) {
                     }
                 }
             } catch (chunkError) {
-                console.error('Translation chunk error:', chunkError);
+                // Translation chunk error - continue with next chunk
             }
         }
         
@@ -984,7 +874,6 @@ async function translateContent(targetLang) {
             });
         } else {
             // Restore original on error
-            console.warn('Translation failed. Please check your internet connection.');
             modalBody.innerHTML = originalContent;
             requestAnimationFrame(() => {
                 initReadAloud();
@@ -992,13 +881,11 @@ async function translateContent(targetLang) {
             });
         }
     } catch (error) {
-        console.error('Translation error:', error);
         modalBody.innerHTML = originalContent;
         requestAnimationFrame(() => {
             initReadAloud();
             initTranslate();
         });
-        // Errors are logged to console only, no popup alerts
     }
     
     stopReadAloud();
