@@ -10,8 +10,25 @@ let currentLanguage = 'en';
 
 // Open modal with place content
 function openModal(placeId) {
-    // Find content
-    let contentData = document.querySelector(`.place-content-data[data-place="${placeId}"]`);
+    // Normalize placeId to lowercase for case-insensitive matching
+    const normalizedPlaceId = placeId.toLowerCase();
+    
+    // Find content - try both exact match and case-insensitive
+    let contentData = document.querySelector(`.place-content-data[data-place="${normalizedPlaceId}"]`) ||
+                     document.querySelector(`.place-content-data[data-place="${placeId}"]`);
+    
+    // Try case-insensitive search if still not found
+    if (!contentData) {
+        const allContentData = document.querySelectorAll('.place-content-data');
+        for (let elem of allContentData) {
+            const elemPlaceId = elem.getAttribute('data-place');
+            if (elemPlaceId && elemPlaceId.toLowerCase() === normalizedPlaceId) {
+                contentData = elem;
+                break;
+            }
+        }
+    }
+    
     let content = null;
     
     if (contentData) {
@@ -19,7 +36,8 @@ function openModal(placeId) {
     }
     
     if (!content) {
-        const placeCard = document.querySelector(`.place-card[data-place="${placeId}"]`);
+        const placeCard = document.querySelector(`.place-card[data-place="${normalizedPlaceId}"]`) ||
+                         document.querySelector(`.place-card[data-place="${placeId}"]`);
         if (placeCard) {
             content = placeCard.querySelector('.place-card-content');
         }
@@ -41,11 +59,14 @@ function openModal(placeId) {
     stopReadAloud();
     
     // Initialize features after DOM update
-    setTimeout(() => {
-        initReadAloud();
-        initTranslate();
-        updateTranslateUI();
-    }, 100);
+    // Use requestAnimationFrame for better DOM readiness, especially for mobile
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            initReadAloud();
+            initTranslate();
+            updateTranslateUI();
+        }, 150); // Increased timeout for better reliability on mobile
+    });
 }
 
 // Close modal
@@ -379,9 +400,58 @@ function initReadAloud() {
         }
         
         // Get text - only blog content
-        let text = blogContent.textContent || blogContent.innerText || '';
+        // Use textContent which works even if element is hidden (important for Kaynes)
+        let text = '';
+        
+        // Force text extraction - ensure we get ALL text content regardless of case or formatting
+        // Clone the element to ensure we get all text even if it's hidden
+        const clonedContent = blogContent.cloneNode(true);
+        
+        // Remove elements we don't want to read
+        const elementsToRemove = clonedContent.querySelectorAll('button, a.location-link, .read-aloud-btn, .translate-btn, .location-section, .photo-gallery-section, .highlights');
+        elementsToRemove.forEach(el => el.remove());
+        
+        // Get text content - this will work regardless of capitalization
+        text = clonedContent.textContent || clonedContent.innerText || '';
+        
+        // If still empty, try direct extraction
+        if (!text || text.trim().length === 0) {
+            // Fallback: manually extract text from child nodes
+            const textNodes = [];
+            const walk = (node) => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    const nodeText = node.textContent.trim();
+                    if (nodeText && 
+                        !nodeText.match(/^(Read Aloud|Stop Reading|Translate|View on Google Maps)$/i)) {
+                        textNodes.push(nodeText);
+                    }
+                } else {
+                    // Skip button and link elements, but include ALL other content
+                    const tagName = node.tagName ? node.tagName.toUpperCase() : '';
+                    const className = node.className || '';
+                    
+                    if (tagName !== 'BUTTON' && 
+                        tagName !== 'A' &&
+                        !className.includes('read-aloud-btn') &&
+                        !className.includes('translate-btn') &&
+                        !className.includes('location-link') &&
+                        !className.includes('location-section') &&
+                        !className.includes('photo-gallery')) {
+                        for (let child of node.childNodes) {
+                            walk(child);
+                        }
+                    }
+                }
+            };
+            walk(blogContent);
+            text = textNodes.join(' ');
+        }
+        
+        // Clean up text - normalize whitespace
         text = text.replace(/\s+/g, ' ').trim();
-        text = text.replace(/Read Aloud|Stop Reading|Translate|View on Google Maps/gi, '').trim();
+        
+        // Remove UI text that might have been included
+        text = text.replace(/Read Aloud|Stop Reading|Translate|View on Google Maps|Location|Gallery|Key Highlights/gi, '').trim();
         
         if (!text || text.length < 10) {
             resetButtonState();
@@ -473,6 +543,11 @@ function initReadAloud() {
             // Allow scrolling but don't stop speech
         }, { passive: true });
     }
+}
+
+// Ensure initReadAloud is called even if button appears later
+if (typeof initReadAloud === 'function') {
+    // This function is now defined above
 }
 
 function startReadAloud() {
