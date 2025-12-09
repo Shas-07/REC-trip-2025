@@ -467,55 +467,63 @@ function startReadAloud(event) {
     }
     
     console.log('Blog content found:', blogContent.className, blogContent.tagName);
+    console.log('Blog content offsetParent:', blogContent.offsetParent);
+    console.log('Blog content display:', window.getComputedStyle(blogContent).display);
     
-    // Get all text content from blog - use innerText for better results
-    // innerText is preferred as it excludes hidden elements and respects styling
+    // Get all text content from blog
+    // CRITICAL FIX FOR KAYNES: Content loaded from hidden parent may have empty innerText
+    // Use textContent as primary method for more reliable extraction
     let text = '';
     
-    // Try multiple methods to extract text - be very thorough
     try {
-        // Method 1: innerText (best, respects CSS)
-        if (blogContent.innerText && blogContent.innerText.trim().length > 0) {
-            text = blogContent.innerText;
-            console.log('✓ Using innerText, length:', text.length);
+        // Method 1: textContent (most reliable, works even if content came from hidden parent)
+        // This is especially important for Kaynes which is inside hiddenContent div
+        const textContentResult = blogContent.textContent || '';
+        if (textContentResult.trim().length > 10) {
+            text = textContentResult;
+            console.log('✓ Using textContent (most reliable), length:', text.length);
         } 
-        // Method 2: textContent (fallback)
-        else if (blogContent.textContent && blogContent.textContent.trim().length > 0) {
-            text = blogContent.textContent;
-            console.log('✓ Using textContent, length:', text.length);
-        } 
-        // Method 3: Manual extraction via TreeWalker
+        // Method 2: innerText (fallback, respects CSS but may be empty)
         else {
-            const walker = document.createTreeWalker(
-                blogContent,
-                NodeFilter.SHOW_TEXT,
-                {
-                    acceptNode: function(node) {
-                        // Skip script and style nodes
-                        const parent = node.parentElement;
-                        if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
-                            return NodeFilter.FILTER_REJECT;
-                        }
-                        return NodeFilter.FILTER_ACCEPT;
-                    }
-                },
-                false
-            );
-            const textNodes = [];
-            let node;
-            while (node = walker.nextNode()) {
-                const trimmed = node.textContent.trim();
-                if (trimmed.length > 0) {
-                    textNodes.push(trimmed);
-                }
+            const innerTextResult = blogContent.innerText || '';
+            if (innerTextResult.trim().length > 10) {
+                text = innerTextResult;
+                console.log('✓ Using innerText (textContent was empty), length:', text.length);
             }
-            text = textNodes.join(' ');
-            console.log('✓ Using TreeWalker, extracted', textNodes.length, 'text nodes');
+            // Method 3: Manual extraction via TreeWalker (last resort)
+            else {
+                console.log('Both textContent and innerText were empty, trying TreeWalker...');
+                const walker = document.createTreeWalker(
+                    blogContent,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: function(node) {
+                            // Skip script and style nodes
+                            const parent = node.parentElement;
+                            if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            return NodeFilter.FILTER_ACCEPT;
+                        }
+                    },
+                    false
+                );
+                const textNodes = [];
+                let node;
+                while (node = walker.nextNode()) {
+                    const trimmed = node.textContent.trim();
+                    if (trimmed.length > 0) {
+                        textNodes.push(trimmed);
+                    }
+                }
+                text = textNodes.join(' ');
+                console.log('✓ Using TreeWalker, extracted', textNodes.length, 'text nodes, total length:', text.length);
+            }
         }
     } catch (e) {
         console.error('Error extracting text:', e);
         // Last resort: direct textContent
-        text = blogContent.textContent || '';
+        text = blogContent.textContent || blogContent.innerText || '';
         console.log('Using emergency fallback, length:', text.length);
     }
     
